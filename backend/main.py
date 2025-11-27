@@ -95,7 +95,7 @@ class TradingSystem:
         self.is_running = False
         self.websocket_clients: List[WebSocket] = []
         self.market_data_interval = 30  # Dynamic interval in seconds
-        self.risk_check_interval = 10  # Check targets/SL every 10 seconds - reduces noise
+        self.risk_check_interval = 1  # Check targets/SL every 1 second for fast exits
         self.metrics_exporter = MetricsExporter()  # Prometheus metrics
         self.ws_manager = get_ws_manager()  # WebSocket manager
         self.entry_timing = EntryTimingManager()  # Entry timing for pullbacks

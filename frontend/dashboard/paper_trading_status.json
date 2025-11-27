@@ -1,0 +1,53 @@
+{
+  "timestamp": "2025-11-20T09:42:39.819227",
+  "capital": 5000035.80942452,
+  "initial_capital": 100000.0,
+  "total_pnl": 35.80942451953888,
+  "last_pnl": 35.80942451953888,
+  "iteration": 1,
+  "sac_enabled": true,
+  "active_strategies": 6,
+  "sac_allocation": [
+    0.11178981512784958,
+    0.1106090173125267,
+    0.10694116353988647,
+    0.10440538078546524,
+    0.11343884468078613,
+    0.10904291272163391,
+    0.11081228405237198,
+    0.11716188490390778,
+    0.115798719227314
+  ],
+  "top_groups": [
+    7,
+    8,
+    4
+  ],
+  "market_status": "open",
+  "strategies": {
+    "quantum_edge": {
+      "enabled": true,
+      "allocation": 0.25
+    },
+    "quantum_edge_v2": {
+      "enabled": true,
+      "allocation": 0.25
+    },
+    "default": {
+      "enabled": true,
+      "allocation": 0.15
+    },
+    "gamma_scalping": {
+      "enabled": true,
+      "allocation": 0.15
+    },
+    "vwap_deviation": {
+      "enabled": true,
+      "allocation": 0.15
+    },
+    "iv_rank_trading": {
+      "enabled": true,
+      "allocation": 0.15
+    }
+  }
+}

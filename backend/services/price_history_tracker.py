@@ -18,7 +18,7 @@ class PriceHistoryTracker:
         self.price_history = defaultdict(dict)  # {instrument_key: {timestamp: price_data}}
         self.prev_close_cache = {}  # {instrument_key: prev_close_price}
         self.last_fetch_time = {}
-        self.fetch_interval = 30  # Fetch full quotes every 30 seconds
+        self.fetch_interval = 60  # Fetch full quotes every 60 seconds
         
     async def update_option_prices(self, option_chain: Dict, symbol: str) -> Dict:
         """

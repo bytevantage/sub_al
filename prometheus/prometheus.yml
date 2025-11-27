@@ -1,0 +1,46 @@
+# Prometheus Configuration for Trading System
+
+global:
+  scrape_interval: 15s  # Scrape targets every 15 seconds
+  evaluation_interval: 15s  # Evaluate rules every 15 seconds
+  external_labels:
+    monitor: 'trading-system'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Rule files (for alerts)
+# rule_files:
+#   - 'alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Trading System Metrics
+  - job_name: 'trading-system'
+    static_configs:
+      - targets: ['host.docker.internal:8000']  # Adjust if running on different host
+        labels:
+          instance: 'trading-backend'
+          service: 'trading-api'
+    metrics_path: '/metrics'
+    scrape_interval: 5s  # More frequent scraping for trading metrics
+
+  # Prometheus Self-Monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'prometheus'
+          service: 'monitoring'
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          instance: 'trading-server'
+          service: 'system-metrics'

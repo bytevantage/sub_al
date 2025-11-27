@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "total_pnl": 43029.30915750442,
+    "total_trades": 323,
+    "win_rate": 69.04024767801857,
+    "avg_win": 267.1259853715298,
+    "avg_loss": -165.39785580346722,
+    "profit_factor": 1.615051078346144,
+    "daily_avg_pnl": 1434.3103052501474,
+    "monthly_return_pct": 43.02930915750443
+  },
+  "strategy_performance": {
+    "QuantumEdge": {
+      "trades": 60,
+      "total_pnl": 14717.354354374804,
+      "win_rate": 75.0,
+      "avg_pnl": 245.28923923958007,
+      "avg_hold": 42.333333333333336
+    },
+    "GammaScalping": {
+      "trades": 41,
+      "total_pnl": 5029.353745004847,
+      "win_rate": 70.73170731707317,
+      "avg_pnl": 122.66716451231335,
+      "avg_hold": 36.21951219512195
+    },
+    "VolatilityHarvesting": {
+      "trades": 50,
+      "total_pnl": 1810.3931764927272,
+      "win_rate": 54.0,
+      "avg_pnl": 36.20786352985454,
+      "avg_hold": 58.26
+    },
+    "InstitutionalFootprint": {
+      "trades": 26,
+      "total_pnl": 5990.899863125981,
+      "win_rate": 73.07692307692307,
+      "avg_pnl": 230.41922550484543,
+      "avg_hold": 36.30769230769231
+    },
+    "VWAPDeviation": {
+      "trades": 40,
+      "total_pnl": 2964.5259990889913,
+      "win_rate": 62.5,
+      "avg_pnl": 74.11314997722478,
+      "avg_hold": 30.05
+    },
+    "MomentumImpulse": {
+      "trades": 45,
+      "total_pnl": 4150.602516897129,
+      "win_rate": 68.88888888888889,
+      "avg_pnl": 92.23561148660286,
+      "avg_hold": 28.755555555555556
+    },
+    "MarketProfileGapFill": {
+      "trades": 16,
+      "total_pnl": 1585.1161182786527,
+      "win_rate": 62.5,
+      "avg_pnl": 99.0697573924158,
+      "avg_hold": 46.125
+    },
+    "PCRReversal": {
+      "trades": 45,
+      "total_pnl": 6781.063384241291,
+      "win_rate": 82.22222222222221,
+      "avg_pnl": 150.69029742758423,
+      "avg_hold": 37.68888888888889
+    }
+  },
+  "what_if": {
+    "high_confidence_only": 34707.44821153379,
+    "stop_loss_5pct": 43029.30915750442,
+    "take_profit_15pct": 43029.30915750442,
+    "ml_optimized": 43029.30915750442
+  }
+}
