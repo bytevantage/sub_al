@@ -1,0 +1,6 @@
+[real_1lakh_2025]
+max_risk_per_trade_pct = 0.012      # ₹1,200 max loss per trade
+daily_loss_limit_pct = 0.10         # ₹10,000 max daily loss
+max_trades_per_day = 100
+min_confidence = 0.78
+note = "Anything promising >2% daily on 1 lakh is a lie"

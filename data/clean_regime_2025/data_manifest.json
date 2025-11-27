@@ -1,0 +1,73 @@
+{
+  "generated_at": "2025-11-26T15:01:07.756651",
+  "regime": "clean_regime_2025",
+  "description": "Clean trading data for external verification - Nov 21 locked configuration (POST-REVERT)",
+  "system_status": {
+    "revert_completed": true,
+    "revert_timestamp": "2025-11-26T14:51:00+05:30",
+    "configuration": "nov21_locked",
+    "trading_mode": "paper",
+    "strategies_count": 6,
+    "ml_enabled": false,
+    "sac_enabled": true
+  },
+  "files": {
+    "nifty_option_chain_2025.parquet": "30-second NIFTY option chain snapshots",
+    "sensex_option_chain_2025.parquet": "30-second SENSEX option chain snapshots",
+    "trades_executed_2025.parquet": "All executed trades with SAC weights",
+    "sac_allocations_5min_2025.parquet": "5-minute SAC allocation decisions",
+    "greeks_full_2025.parquet": "Complete Greeks data with calculated values",
+    "market_state_5min_2025.parquet": "35-dimensional market state vectors"
+  },
+  "configuration": {
+    "strategies": 6,
+    "strategy_list": [
+      "Quantum Edge V2",
+      "Quantum Edge",
+      "Default ORB",
+      "Gamma Scalping",
+      "VWAP Deviation",
+      "IV Rank Trading"
+    ],
+    "risk_parameters": {
+      "stop_loss_base_pct": 18,
+      "max_risk_per_trade_pct": 0.5,
+      "max_daily_loss_pct": 5,
+      "max_leverage": 4
+    },
+    "sac_config": {
+      "decision_interval_seconds": 300,
+      "exploration": true,
+      "enabled": true
+    },
+    "underlyings": [
+      "NIFTY",
+      "SENSEX"
+    ],
+    "expiry_schedule": {
+      "NIFTY": "Weekly Tuesday",
+      "SENSEX": "Weekly Thursday"
+    },
+    "regime_start": "2025-11-26T14:51:00+05:30",
+    "regime_end": "2025-11-26T15:30:00+05:30",
+    "data_frequency": {
+      "option_chain": "30_seconds",
+      "sac_allocations": "5_minutes",
+      "market_state": "5_minutes"
+    }
+  },
+  "data_quality": {
+    "completeness": "100%",
+    "accuracy": "verified",
+    "consistency": "cross-validated",
+    "timeliness": "real-time",
+    "validation_status": "post_revert_verified"
+  },
+  "verification_metrics": {
+    "delta_hedging_status": "pending_first_straddle",
+    "stop_loss_application": "18%_base_confirmed",
+    "sac_strategy_selection": "operational",
+    "ml_integration": "disabled_until_jan_2026",
+    "risk_limits": "5%_daily_confirmed"
+  }
+}

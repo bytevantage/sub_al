@@ -1,0 +1,35 @@
+{
+  "email": "srbhandary@gmail.com",
+  "exchanges": [
+    "BCD",
+    "BSE",
+    "BFO",
+    "MCX",
+    "CDS",
+    "NSE",
+    "NFO"
+  ],
+  "products": [
+    "OCO",
+    "D",
+    "CO",
+    "I",
+    "MTF"
+  ],
+  "broker": "UPSTOX",
+  "user_id": "74BA2N",
+  "user_name": "RADHAKRISHNA S BHANDARY",
+  "order_types": [
+    "MARKET",
+    "LIMIT",
+    "SL",
+    "SL-M"
+  ],
+  "user_type": "individual",
+  "poa": false,
+  "ddpi": false,
+  "is_active": true,
+  "access_token": "eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NEJBMk4iLCJqdGkiOiI2OTFlOTJkMjdlOWMzYTVhNDM5Yjc4NDAiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6dHJ1ZSwiaWF0IjoxNzYzNjExMzQ2LCJpc3MiOiJ1ZGFwaS1nYXRld2F5LXNlcnZpY2UiLCJleHAiOjE3NjM2NzYwMDB9.7I67YyTnrFZ2XwWs7JMk_hT8UF7jXCD5v6tz50J1mZc",
+  "extended_token": null,
+  "created_at": 1763611346
+}

@@ -1,0 +1,31 @@
+dynamic_sizing:
+  confidence_thresholds:
+    70-75%:
+      max_risk: 0.015
+      multiplier: 0.8
+    75-80%:
+      max_risk: 0.018
+      multiplier: 0.9
+    80-85%:
+      max_risk: 0.02
+      multiplier: 1.0
+    85-90%:
+      max_risk: 0.025
+      multiplier: 1.2
+    90-95%:
+      max_risk: 0.03
+      multiplier: 1.5
+    95-100%:
+      max_risk: 0.04
+      multiplier: 2.0
+  enabled: true
+  portfolio_risk_limits:
+    max_positions: 5
+    max_total_risk: 0.1
+    risk_reduction_threshold: 0.08
+  strategy_multipliers:
+    GammaScalping: 1.1
+    InstitutionalFootprint: 1.05
+    PCRReversal: 1.1
+    QuantumEdge: 1.15
+    VolatilityCapture: 1.05

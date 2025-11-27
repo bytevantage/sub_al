@@ -1,0 +1,27 @@
+[Unit]
+Description=Trading Engine Monitor Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=srbhandary
+Group=staff
+WorkingDirectory=/Users/srbhandary/Documents/Projects/srb-algo
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/Users/srbhandary/Documents/Projects/srb-algo
+ExecStart=/usr/bin/python3 /Users/srbhandary/Documents/Projects/srb-algo/monitor_trading_engine.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/Users/srbhandary/Documents/Projects/srb-algo/data/logs/monitor_service.log
+StandardError=append:/Users/srbhandary/Documents/Projects/srb-algo/data/logs/monitor_service.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/Users/srbhandary/Documents/Projects/srb-algo/data/logs
+
+[Install]
+WantedBy=default.target

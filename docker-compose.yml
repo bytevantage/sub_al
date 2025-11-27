@@ -1,0 +1,104 @@
+services:
+  # PostgreSQL Database (Internal only - no external port exposure)
+  postgres:
+    image: timescale/timescaledb:latest-pg14
+    container_name: trading_db
+    environment:
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: trading_pass
+      POSTGRES_DB: trading_db
+    # No external port exposure - only accessible within Docker network
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - trading_network
+    restart: unless-stopped
+  
+  # Redis Cache (Internal only - no external port exposure)
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    # No external port exposure - only accessible within Docker network
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - trading_network
+    restart: unless-stopped
+  
+  # Trading Engine (FastAPI Backend)
+  trading-engine:
+    image: srb-algo-trading-engine:latest
+    container_name: trading_engine
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TZ: Asia/Kolkata
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      - ./config:/app/config
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./meta_controller:/app/meta_controller
+      - ./training:/app/training
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - trading_network
+    restart: unless-stopped
+  
+  # Frontend Dashboard (Static HTML - served by backend)
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: ../docker/Dockerfile.frontend
+  #   container_name: trading_dashboard
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     REACT_APP_API_URL: http://localhost:8000
+  #     REACT_APP_WS_URL: ws://localhost:8000/ws
+  #   depends_on:
+  #     - trading-engine
+  #   networks:
+  #     - trading_network
+  #   restart: unless-stopped
+  
+  # Nginx Reverse Proxy (Commented - frontend not in use, backend serves dashboard directly)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: trading_nginx
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - trading-engine
+  #     - frontend
+  #   networks:
+  #     - trading_network
+  #   restart: unless-stopped
+
+networks:
+  trading_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

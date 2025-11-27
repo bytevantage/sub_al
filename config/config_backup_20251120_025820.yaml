@@ -1,0 +1,262 @@
+alerts:
+  browser_notifications: true
+  email_enabled: false
+  enabled: true
+  sound_enabled: true
+  telegram_enabled: false
+dashboard:
+  api_port: 8000
+  host: 0.0.0.0
+  port: 3000
+  websocket_enabled: true
+data:
+  candle_timeframes:
+  - 5m
+  - 15m
+  oi_snapshot_interval: 120
+  option_chain_update_interval: 60
+  price_tick_interval: 5
+database:
+  host: postgres
+  name: trading_db
+  password: trading_pass
+  port: 5432
+  type: postgresql
+  user: trading_user
+execution:
+  max_trades_per_hour: 100
+instruments:
+- exchange: NSE
+  expiry_day: Tuesday
+  expiry_type: weekly
+  expiry_weekday: 1
+  lot_size: 75
+  segment: OPT
+  symbol: NIFTY
+- exchange: BSE
+  expiry_day: Thursday
+  expiry_type: weekly
+  expiry_weekday: 3
+  lot_size: 20
+  segment: OPT
+  symbol: SENSEX
+logging:
+  backup_count: 10
+  file: data/logs/trading.log
+  level: INFO
+  max_size_mb: 100
+market:
+  end_time: '15:30'
+  force_close_time: '15:20'
+  pre_market_start: 09:00
+  start_time: 09:15
+ml:
+  features_enabled:
+  - price_features
+  - volume_features
+  - oi_features
+  - greeks_features
+  - technical_indicators
+  - order_flow
+  - sentiment
+  min_training_samples: 100
+  model_path: models/
+  model_versions_to_keep: 5
+  retrain_interval_trades: 20
+  retrain_time: '15:30'
+profit_targets:
+  base_target_percent: 10
+  high_volatility_multiplier: 1.5
+  near_expiry_multiplier: 0.5
+  strong_signal_target_percent: 30
+redis:
+  db: 0
+  host: redis
+  port: 6379
+risk:
+  daily_loss_limit_percent: 3
+  max_capital_at_risk_percent: 10
+  min_signal_strength: 75
+  per_trade_risk_percent: 1
+risk_settings:
+  daily_loss_limit: 10
+  max_positions: 20
+  per_trade_risk: 0.5
+safety:
+  circuit_breaker:
+    daily_loss_limit_percent: 3
+    iv_shock_percent: 50
+    max_positions: 20
+    override_password: OVERRIDE123
+    vix_threshold: 40
+  data_monitor:
+    critical_threshold_seconds: 10
+    max_consecutive_failures: 3
+    min_quality_score: 0.7
+    stale_threshold_seconds: 5
+  emergency_api:
+    api_key: EMERGENCY_KEY_123
+    enable_manual_trading: false
+  market_monitor:
+    auto_square_on_extreme: false
+    auto_square_on_halt: true
+    iv_shock_percent: 50
+    iv_shock_window_minutes: 5
+    vix_elevated: 25
+    vix_extreme: 60
+    vix_high_stress: 40
+  order_lifecycle:
+    cancel_retry_delay: 2
+    max_cancel_attempts: 3
+    signal_priority_order:
+    - stop_loss
+    - take_profit
+    - trailing_stop
+    - strategy_signal
+    stop_out_cooldown_minutes: 5
+  order_validator:
+    max_capital_per_trade: 50000
+    max_lots_per_order: 5
+    max_price: 1000
+    max_stop_loss_percent: 20
+    min_price: 0.05
+    min_stop_loss_percent: 0.5
+    price_band_percent: 5
+  position_manager:
+    max_capital_utilization: 0.8
+    max_position_allocation: 0.2
+    max_strategy_allocation: 0.4
+    total_capital: 100000
+  rate_limiter:
+    backoff_multiplier: 2
+    max_backoff_seconds: 60
+    max_orders_per_second: 5
+    max_requests_per_second: 10
+  reconciliation:
+    alert_on_mismatch: true
+    price_tolerance_percent: 0.5
+    quantity_tolerance: 0
+    time_tolerance_seconds: 60
+  slippage:
+    base_slippage_bps: 10
+    brokerage_rate: 0.0003
+    exchange_charges: 0.0005
+    gst_rate: 0.18
+    high_liquidity_oi: 50000
+    high_vol_slippage_bps: 50
+    low_liquidity_oi: 10000
+    spread_bps: 5
+    stt_rate: 0.0005
+stop_loss:
+  atr_multiplier: 2
+  trailing_stop_enabled: true
+  trailing_stop_percent: 5
+strategy_weights:
+  PCRReversal: 0.15
+  QuantumEdge: 0.45
+  butterfly_spread: 45
+  cross_asset_correlation: 45
+  gamma_scalping: 60
+  gap_and_go: 55
+  greeks_positioning: 70
+  institutional_footprint: 75
+  iron_condor: 45
+  iv_skew: 65
+  liquidity_hunting: 60
+  max_pain_theory: 65
+  multi_leg_arbitrage: 50
+  oi_change_patterns: 80
+  order_flow_imbalance: 85
+  pcr_analysis: 75
+  reversal_detection: 90
+  sentiment_analysis: 55
+  straddle_strangle: 50
+  support_resistance: 50
+  time_of_day_patterns: 40
+  vix_mean_reversion: 60
+trading:
+  initial_capital: 100000
+  max_positions: 20
+  mode: paper
+  signal_cooldown_seconds: 300
+upstox:
+  api_version: v2
+  base_url: https://api.upstox.com
+  client_id: 831e3836-d40e-411d-b659-63aaa41942b6
+  client_secret: ''
+  rate_limit_per_second: 10
+  redirect_uri: http://localhost:5001/callback
+  token_file: config/upstox_token.json
+  websocket_url: wss://api.upstox.com/v2/feed
+strategies:
+  oi_change_patterns:
+    enabled: false
+    allocation: 0.0
+    reason: Killed due to severe underperformance (autopsy 2025)
+  pcr_analysis:
+    enabled: false
+    allocation: 0.0
+    reason: Killed due to severe underperformance (autopsy 2025)
+  default:
+    enabled: true
+    allocation: 0.15
+    filters:
+      time_window:
+        enabled: false
+        start_hour: 9
+        start_minute: 15
+        end_hour: 10
+        end_minute: 0
+        reason: "Only 09:15-10:00 window is profitable (+\u20B92,978 in backtest)"
+      day_of_week:
+        enabled: false
+        allowed_days:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        blocked_days: []
+        reason: "Thursday expiry days lose \u20B9-133 per trade"
+      reason: "Wednesday shows +\u20B92,414 P&L"
+  quantum_edge:
+    enabled: true
+    allocation: 0.25
+    meta_group: 0
+    reason: Primary ML strategy with high confidence signals
+  gamma_scalping:
+    enabled: true
+    allocation: 0.15
+    meta_group: 1
+    reason: Greeks-based delta-neutral strategy
+  vwap_deviation:
+    enabled: true
+    allocation: 0.15
+    meta_group: 3
+    reason: Mean reversion on VWAP deviation
+  iv_rank_trading:
+    enabled: true
+    allocation: 0.15
+    meta_group: 2
+    reason: Volatility-based trading
+sac_meta_controller:
+  enabled: true
+  model_path: models/sac_comprehensive_real.pth
+  update_interval_seconds: 300
+  max_allocation_per_group: 1.0
+  min_allocation_per_group: 0.0
+  risk_multiplier: 2.0
+  reason: Demonstrated Sortino 14.62 in demo backtest
+risk_management:
+  cash_reserve_pct: 0.0
+  max_portfolio_leverage: 10.0
+  daily_loss_limit_pct: 1.0
+  max_consecutive_losses: 999999
+  per_trade_risk_pct: 1.0
+  expiry_day_trading: true
+  reason: UNRESTRICTED PAPER TRADING - NO LIMITS FOR TESTING
+  max_positions: 9999
+  max_trades_per_day: 9999
+  max_trades_per_hour: 9999

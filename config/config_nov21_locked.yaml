@@ -1,0 +1,36 @@
+# FINAL LOCKED CONFIG – NOVEMBER 21, 2025 – DO NOT CHANGE EVER AGAIN
+system:
+  strategies: 6
+  underlyings: ["NIFTY", "SENSEX"]
+  ml_live: false                              # ML integration pending Jan 2026
+
+risk:
+  stop_loss_base_pct: 18                      # 15–24% dynamic with VIX
+  max_risk_per_trade_pct: 0.5
+  max_daily_loss_pct: 5
+  max_leverage: 4
+
+sac:
+  decision_interval_seconds: 300
+  exploration: true                           # stays in exploration until Jan 2026
+
+gamma_scalping:
+  delta_hedge_threshold: 0.25
+  auto_hedge_enabled: true
+  max_premium_pct_of_spot: 5
+
+strategies:
+  - name: "Quantum Edge V2"
+    allocation_base: 25
+    max_allocation: 60
+    ml_enabled: false
+  - name: "Quantum Edge"
+    allocation_base: 20
+  - name: "Default ORB"
+    allocation_base: 10
+  - name: "Gamma Scalping"
+    allocation_base: 15
+  - name: "VWAP Deviation"
+    allocation_base: 10
+  - name: "IV Rank Trading"
+    allocation_base: 10
