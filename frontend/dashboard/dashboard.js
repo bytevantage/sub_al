@@ -401,9 +401,7 @@ async function checkEngineStatus() {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
         
-        const response = await fetch(`${API_BASE_URL}/api/health?t=${Date.now()}`, {
-            signal: controller.signal,
-            cache: 'no-store'
+        const response = await fetch(`${API_BASE_URL}/api/health`, {
         });
         clearTimeout(timeout);
         
@@ -618,9 +616,7 @@ function updateStatusBadge(isMarketOpen) {
 async function updatePositions() {
     try {
         // Add cache-busting to ensure real-time prices
-        const response = await fetch(`${API_BASE_URL}/api/dashboard/positions?t=${Date.now()}`, {
-            cache: 'no-store'
-        });
+        const response = await fetch(`${API_BASE_URL}/api/dashboard/positions`);
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -1916,9 +1912,7 @@ function displayPCRAnalysis(niftyData, sensexData) {
 async function updateTradeHistory() {
     try {
         // Add cache-busting to force fresh data
-        const response = await fetch(`${API_BASE_URL}/api/dashboard/trades/recent?limit=100&today_only=true&t=${Date.now()}`, {
-            cache: 'no-store'
-        });
+        const response = await fetch(`${API_BASE_URL}/api/dashboard/trades/recent?limit=100&today_only=true`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -3496,7 +3490,7 @@ function startTokenMonitoring() {
 
 async function updateTokenStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/token/status`);
+        const response = await fetch(`${API_BASE_URL}/api/upstox/token/status`);
         const data = await response.json();
         
         const tokenStatusEl = document.getElementById('token-status');

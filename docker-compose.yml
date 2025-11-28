@@ -33,13 +33,13 @@ services:
   trading-engine:
     image: srb-algo-trading-engine:latest
     container_name: trading_engine
-    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --loop uvloop --http httptools --ws websockets --lifespan on --timeout-keep-alive 30 --timeout-graceful-shutdown 30
     env_file:
       - .env
     environment:
-      DB_HOST: postgres
+      DB_HOST: 172.18.0.3
       DB_PORT: 5432
-      REDIS_HOST: redis
+      REDIS_HOST: 172.18.0.2
       REDIS_PORT: 6379
       TZ: Asia/Kolkata
     dns:
@@ -97,7 +97,8 @@ services:
 
 networks:
   trading_network:
-    driver: bridge
+    external: true
+    name: srb-algo_trading_network
 
 volumes:
   postgres_data:
