@@ -179,10 +179,10 @@ async def get_risk_metrics_snapshot() -> Dict[str, Any]:
                     session.query(Trade)
                     .filter(Trade.trade_date >= today_ist().date())
                     .with_entities(
-                        database.func.sum(Trade.pnl).label("realized_pnl"),
+                        database.func.sum(Trade.net_pnl).label("realized_pnl"),
                         database.func.count(Trade.id).label("total_trades"),
-                        database.func.sum(case([(Trade.pnl > 0, 1), (Trade.pnl <= 0, 0)])).label("winning_trades"),
-                        database.func.sum(case([(Trade.pnl < 0, 1), (Trade.pnl >= 0, 0)])).label("losing_trades"),
+                        database.func.sum(case((Trade.net_pnl > 0, 1), (Trade.net_pnl <= 0, 0))).label("winning_trades"),
+                        database.func.sum(case((Trade.net_pnl < 0, 1), (Trade.net_pnl >= 0, 0))).label("losing_trades"),
                     )
                     .all()
                 )
