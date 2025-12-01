@@ -3,7 +3,7 @@ Main FastAPI Application
 Entry point for the trading system backend
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,7 +54,11 @@ from backend.api.cache_status import router as cache_status_router
 from backend.api.database_optimization import router as database_optimization_router
 from backend.api.health_monitoring import router as health_monitoring_router
 from backend.api.structured_logging import router as structured_logging_router
-from backend.api.data_backup import router as data_backup_router
+from backend.api.data_backup import router as data_backup_router  # Data backup
+from backend.api.test_data_manager import router as test_data_router  # Test data management
+# from backend.api.test_trading import router as test_trading_router, set_trading_system  # Test trading control - TEMPORARILY DISABLED
+# from backend.api.test_simple import router as test_simple_router, set_trading_system as set_simple_trading_system  # Simple test - TEMPORARILY DISABLED
+from backend.api.debug_dashboard import router as debug_router  # Debug dashboard
 from backend.api.websocket_manager import get_ws_manager, AlertLevel
 from backend.safety.circuit_breaker import CircuitBreaker
 from backend.safety.position_manager import PositionManager
@@ -95,7 +99,8 @@ class TradingSystem:
         self.is_running = False
         self.websocket_clients: List[WebSocket] = []
         self.market_data_interval = 30  # Dynamic interval in seconds
-        self.risk_check_interval = 1  # Check targets/SL every 1 second for fast exits
+        # Use OFFICIAL data fetch frequency from config
+        self.risk_check_interval = config.get('data_fetch.risk_check_internal_seconds', 10)  # Official: 10 seconds
         self.metrics_exporter = MetricsExporter()  # Prometheus metrics
         self.ws_manager = get_ws_manager()  # WebSocket manager
         self.entry_timing = EntryTimingManager()  # Entry timing for pullbacks
@@ -502,14 +507,50 @@ class TradingSystem:
         logger.info("🛑 Stopping trading system...")
         self.is_running = False
 
-        # Close all positions before shutdown
-        if self.order_manager:
-            await self.order_manager.close_all_positions()
+        # DON'T auto-close positions on shutdown - preserve trades across restarts
+        # This prevents forced liquidation during system restarts
+        logger.info("📋 Preserving open positions across restart")
         
         # Persist recent signal telemetry for next startup
         self._persist_recent_signals()
 
-        logger.info("✓ Trading system stopped")
+        logger.info("✓ Trading system stopped - positions preserved")
+    
+    async def _monitor_positions_only(self):
+        """Monitor existing positions without generating new signals (after 3:20 PM)"""
+        try:
+            # Get current positions
+            positions = self.risk_manager.get_open_positions()
+            
+            if not positions:
+                logger.info("📊 No open positions to monitor")
+                return
+            
+            # Update position prices from broker
+            await self._update_position_prices(positions)
+            
+            # Check EOD exit for existing positions
+            if self.risk_manager.should_exit_eod():
+                logger.warning("⚠️ EOD exit triggered during position monitoring")
+                for position in positions:
+                    if (position.get('symbol') and 
+                        position.get('strike_price') and 
+                        position.get('instrument_type')):
+                        await self.order_manager.close_position(position, exit_type="EOD")
+            else:
+                # Check stop losses only (no new targets)
+                for position in positions:
+                    if self.risk_manager.should_exit(position):
+                        await self.order_manager.close_position(position)
+            
+            # Update metrics
+            await self._update_risk_metrics()
+            
+            # Short sleep since we're only monitoring
+            await asyncio.sleep(3)
+            
+        except Exception as e:
+            logger.error(f"Error in position monitoring: {e}")
     
     async def trading_loop(self):
         """Main trading loop - generates and executes signals"""
@@ -544,6 +585,13 @@ class TradingSystem:
                     await asyncio.sleep(60)  # Check every minute when closed
                     continue
                 
+                # Check if new orders should be stopped (after 3:20 PM)
+                if self.risk_manager.should_stop_new_orders():
+                    logger.info(f"⛔ New orders cutoff reached - only monitoring existing positions")
+                    # Continue to monitor positions but don't generate new signals
+                    await self._monitor_positions_only()
+                    continue
+                
                 # Get latest market data
                 logger.info("📊 Fetching market state...")
                 market_state = await self.market_data.get_current_state()
@@ -574,21 +622,26 @@ class TradingSystem:
                     
                     # Generate signals - use SAC if enabled, else regular strategies
                     if self.sac_enabled and self.sac_agent and self.strategy_zoo:
-                        # SAC Meta-Controller path
-                        try:
-                            state = self._build_sac_state(market_state)
-                            # SAC agent returns action (allocation vector), we need strategy index
-                            import random
-                            # For now, select random strategy index (0-5) for exploration
-                            selected_strategy_idx = random.randint(0, len(self.strategy_zoo.strategies) - 1)
-                            signals = await self.strategy_zoo.generate_signals(selected_strategy_idx, market_state)
-                            logger.info(f"🎯 SAC selected strategy {selected_strategy_idx}: {self.strategy_zoo.strategies[selected_strategy_idx]['name']}")
-                            logger.info(f"📊 Generated {len(signals)} signals from strategy_zoo")
-                        except Exception as e:
-                            logger.error(f"SAC strategy selection failed: {e}, no fallback to old strategy engine")
-                            import traceback
-                            logger.error(traceback.format_exc())
-                            signals = []  # No signals if SAC fails
+                        # Double-check new orders cutoff before generating signals
+                        if self.risk_manager.should_stop_new_orders():
+                            logger.info("⛔ Signal generation blocked - new orders cutoff reached")
+                            signals = []
+                        else:
+                            # SAC Meta-Controller path
+                            try:
+                                state = self._build_sac_state(market_state)
+                                # SAC agent returns action (allocation vector), we need strategy index
+                                import random
+                                # For now, select random strategy index (0-5) for exploration
+                                selected_strategy_idx = random.randint(0, len(self.strategy_zoo.strategies) - 1)
+                                signals = await self.strategy_zoo.generate_signals(selected_strategy_idx, market_state)
+                                logger.info(f"🎯 SAC selected strategy {selected_strategy_idx}: {self.strategy_zoo.strategies[selected_strategy_idx]['name']}")
+                                logger.info(f"📊 Generated {len(signals)} signals from strategy_zoo")
+                            except Exception as e:
+                                logger.error(f"SAC strategy selection failed: {e}, no fallback to old strategy engine")
+                                import traceback
+                                logger.error(traceback.format_exc())
+                                signals = []  # No signals if SAC fails
                     else:
                         # SAC not enabled - no trading
                         logger.info("SAC Meta-Controller not enabled - no signals generated")
@@ -605,6 +658,11 @@ class TradingSystem:
                     # Execute top signals immediately if risk allows
                     logger.info(f"🎯 Executing {len(top_signals)} top signals...")
                     for i, signal in enumerate(top_signals):
+                        # Final check: ensure we haven't passed the 3:20 PM cutoff
+                        if self.risk_manager.should_stop_new_orders():
+                            logger.warning(f"⛔ Signal execution blocked - cutoff reached during execution loop")
+                            break
+                        
                         # Handle both Signal objects and dicts
                         if isinstance(signal, dict):
                             signal_name = signal.get('strategy', signal.get('strategy_name', 'Unknown'))
@@ -813,8 +871,8 @@ class TradingSystem:
     def _calculate_optimal_interval(self) -> int:
         """Calculate optimal fetch interval based on market conditions and positions"""
         
-        # Get configured base interval from config (default 30s for aggressive scanning)
-        base_interval = config.get('data.option_chain_update_interval', 30)
+        # Use OFFICIAL data fetch frequency from config
+        base_interval = config.get('data_fetch.option_chain_seconds', 30)
         
         # Check if we have positions
         has_positions = len(self.order_manager.positions) > 0 if self.order_manager else False
@@ -1478,6 +1536,16 @@ async def lifespan(app: FastAPI):
     app.state.trading_system = trading_system
     logger.info("✓ Trading system stored in app.state")
     
+    # Set trading system reference for test trading module - TEMPORARILY DISABLED
+# set_trading_system(trading_system)
+# set_simple_trading_system(trading_system)
+# logger.info("✓ Trading system reference set for test trading")
+    
+    # Set trading system reference for dashboard
+    from backend.api.dashboard import set_trading_system as set_dashboard_trading_system
+    set_dashboard_trading_system(trading_system)
+    logger.info("✓ Trading system reference set for dashboard")
+    
     # Start token manager service
     from backend.services.token_manager import get_token_manager
     token_manager = get_token_manager()
@@ -1512,6 +1580,14 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# Mount static files for dashboard (BEFORE custom middleware)
+dashboard_path = Path(__file__).parent.parent / "frontend" / "dashboard"
+if dashboard_path.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), name="dashboard")
+    logger.info(f"✓ Dashboard mounted at /dashboard from {dashboard_path}")
+else:
+    logger.warning(f"⚠️  Dashboard directory not found: {dashboard_path}")
+
 # Include API routers
 app.include_router(trade_history_router)
 app.include_router(analytics_router)
@@ -1521,37 +1597,63 @@ app.include_router(watchlist_router)
 app.include_router(watchlist_performance_router)
 app.include_router(emergency_router)
 app.include_router(settings_router)
-app.include_router(metrics_router)  # Prometheus metrics
-app.include_router(dashboard_router)  # Dashboard API endpoints
-app.include_router(real_time_metrics_router)
 app.include_router(production_lock_router)
-app.include_router(ml_strategy_router) 
-app.include_router(upstox_auth_router)  # Upstox OAuth authentication
-app.include_router(token_status_router)  # Token status and health monitoring
-app.include_router(aggressive_mode_router)  # Aggressive mode toggle
-app.include_router(cache_status_router)  # Redis cache monitoring
-app.include_router(database_optimization_router)  # Database optimization
-app.include_router(health_monitoring_router)  # Health monitoring
-app.include_router(structured_logging_router)  # Structured logging
+app.include_router(ml_strategy_router)
+app.include_router(health_monitoring_router)
+app.include_router(upstox_auth_router)
+app.include_router(dashboard_router)
 app.include_router(data_backup_router)  # Data backup
+app.include_router(test_data_router)  # Test data management
+# app.include_router(test_trading_router)  # Test trading control - TEMPORARILY DISABLED
+# app.include_router(test_simple_router)  # Simple test - TEMPORARILY DISABLED
+app.include_router(debug_router)  # Debug dashboard
 
-# Mount static files for dashboard
-dashboard_path = Path(__file__).parent.parent / "frontend" / "dashboard"
-if dashboard_path.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), name="dashboard")
-    logger.info(f"✓ Dashboard mounted at /dashboard from {dashboard_path}")
-else:
-    logger.warning(f"⚠️  Dashboard directory not found: {dashboard_path}")
-
-# Additional middleware to handle CORS for file:// protocol
+# Add cache control headers to prevent caching issues (AFTER all mounts and routers)
 @app.middleware("http")
-async def add_cors_headers(request, call_next):
-    """Add CORS headers to all responses"""
+async def add_cache_control_headers(request, call_next):
+    """Add cache control headers to prevent browser caching"""
+    
+    # Handle pre-flight OPTIONS requests
+    if request.method == "OPTIONS":
+        response = Response()
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Expose-Headers"] = "*"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+    
     response = await call_next(request)
+    
+    # Ensure CORS headers are present for ALL responses (including static files)
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Expose-Headers"] = "*"
+    
+    # Add aggressive cache control for API endpoints to reduce dashboard load
+    if request.url.path.startswith("/api/"):
+        # Allow short caching for dashboard data APIs (1-2 seconds)
+        if any(path in request.url.path for path in ["/api/capital", "/api/dashboard/risk-metrics", "/api/dashboard/positions"]):
+            response.headers["Cache-Control"] = "max-age=2, public"
+        # Allow longer caching for market data (5-10 seconds)
+        elif any(path in request.url.path for path in ["/api/market/", "/api/watchlist/"]):
+            response.headers["Cache-Control"] = "max-age=5, public"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+    else:
+        # No caching for non-API endpoints
+        response.headers["Cache-Control"] = "no-cache"
+    
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["Surrogate-Control"] = "no-store"
+    # Add additional cache-busting headers
+    response.headers["Vary"] = "*"
+    response.headers["Timing-Allow-Origin"] = "*"
+    
     return response
 
 # Initialize database tables on startup
@@ -1677,14 +1779,21 @@ async def get_paper_trading_status():
             if (now - cached_time).total_seconds() < _paper_trading_cache_timeout:
                 return cached_data
         
+        # Default values if trading_system is not initialized
+        current_capital = 100000
+        initial_capital = 100000
+        sac_enabled = False
+        active_strategies = 6
+        
         # Get current capital
-        if trading_system.risk_manager:
+        if trading_system and trading_system.risk_manager:
             capital_data = trading_system.risk_manager.get_capital_info()
             current_capital = capital_data.get('current_capital', 100000)
             initial_capital = capital_data.get('starting_capital', 100000)
-        else:
-            current_capital = 100000
-            initial_capital = 100000
+            sac_enabled = getattr(trading_system, 'sac_enabled', False)
+            
+        if trading_system and trading_system.strategy_zoo:
+            active_strategies = len(trading_system.strategy_zoo.strategies)
         
         # Get strategy allocations from strategy_zoo
         strategies = {
@@ -1697,7 +1806,10 @@ async def get_paper_trading_status():
         }
         
         # Get current positions count
-        positions = await trading_system.order_manager.get_positions()
+        if trading_system and trading_system.order_manager:
+            positions = await trading_system.order_manager.get_positions()
+        else:
+            positions = []
         
         response = {
             "timestamp": datetime.now().isoformat(),
@@ -1706,8 +1818,8 @@ async def get_paper_trading_status():
             "total_pnl": current_capital - initial_capital,
             "last_pnl": current_capital - initial_capital,
             "iteration": 1,
-            "sac_enabled": trading_system.sac_enabled,
-            "active_strategies": len(trading_system.strategy_zoo.strategies) if trading_system.strategy_zoo else 0,
+            "sac_enabled": sac_enabled,
+            "active_strategies": active_strategies,
             "sac_allocation": [0.25, 0.20, 0.10, 0.15, 0.10, 0.10],  # Actual strategy allocations
             "top_groups": [0, 1, 3],  # Top 3 strategies by allocation
             "market_status": "open",
@@ -1819,6 +1931,8 @@ async def get_token_status():
                 "valid": valid,
                 "age_hours": round(age_seconds / 3600, 1),
                 "remaining_hours": round(remaining_seconds / 3600, 1) if valid else 0,
+                "time_remaining_hours": round(remaining_seconds / 3600, 1) if valid else 0,  # Add for dashboard compatibility
+                "time_remaining_seconds": remaining_seconds if valid else 0,  # Add for dashboard compatibility
                 "created_at": created_at,
                 "expires_at": expires_at
             }
