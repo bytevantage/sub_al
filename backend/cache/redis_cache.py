@@ -5,6 +5,7 @@ Only caches existing spot prices and option chains - no new data
 """
 
 import json
+import os
 import time
 from typing import Dict, Optional, Any
 from datetime import datetime, timedelta
@@ -13,11 +14,24 @@ from backend.core.logger import get_logger
 
 logger = get_logger(__name__)
 
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle datetime objects"""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class RedisCacheManager:
     """Redis caching for existing market data only"""
     
-    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
+    def __init__(self, redis_url: str = None):
         self.redis_client = None
+        # Use environment variable or construct from host/port
+        if redis_url is None:
+            redis_host = os.getenv('REDIS_HOST', 'localhost')
+            redis_port = os.getenv('REDIS_PORT', '6379')
+            redis_url = f"redis://{redis_host}:{redis_port}/0"
+        
         self.redis_url = redis_url
         self._connect()
         
@@ -79,7 +93,7 @@ class RedisCacheManager:
             self.redis_client.setex(
                 key, 
                 self.SPOT_PRICE_TTL, 
-                json.dumps(data)
+                json.dumps(data, cls=DateTimeEncoder)
             )
             logger.debug(f"Cached spot price for {symbol}: {price}")
         except Exception as e:
@@ -122,7 +136,7 @@ class RedisCacheManager:
             self.redis_client.setex(
                 key,
                 self.OPTION_CHAIN_TTL,
-                json.dumps(data)
+                json.dumps(data, cls=DateTimeEncoder)
             )
             logger.debug(f"Cached option chain for {symbol} {expiry}")
         except Exception as e:
@@ -165,7 +179,7 @@ class RedisCacheManager:
             self.redis_client.setex(
                 key,
                 self.TECHNICAL_INDICATORS_TTL,
-                json.dumps(data)
+                json.dumps(data, cls=DateTimeEncoder)
             )
             logger.debug(f"Cached indicators for {symbol} {timeframe}")
         except Exception as e:

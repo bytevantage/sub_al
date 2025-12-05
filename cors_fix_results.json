@@ -1,0 +1,141 @@
+{
+  "timestamp": "2025-11-28T13:31:38.626139",
+  "results": {
+    "capital": {
+      "status_code": 0,
+      "success": false,
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=5)"
+    },
+    "positions": {
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "status": "success",
+        "data": {
+          "timestamp": "2025-11-28T13:31:19.320234+05:30",
+          "positions": [],
+          "totals": {
+            "count": 0,
+            "total_unrealized_pnl": 0.0,
+            "used_margin": 0.0,
+            "available_margin": 100000,
+            "capital_utilization": 0.0
+          }
+        }
+      }
+    },
+    "risk_metrics": {
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "status": "success",
+        "data": {
+          "timestamp": "2025-11-28T13:31:19.866791+05:30",
+          "daily_pnl": 0.0,
+          "daily_pnl_percent": 0.0,
+          "max_drawdown": 0.0,
+          "sharpe_ratio": 0.0,
+          "win_rate": 0.0,
+          "total_trades": 0,
+          "capital_utilization": 0.0,
+          "largest_position_percent": 0.0,
+          "total_unrealized_pnl": 0.0,
+          "used_margin": 0.0,
+          "available_margin": 100000,
+          "exposure_by_strategy": {}
+        }
+      }
+    },
+    "health": {
+      "status_code": 0,
+      "success": false,
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=5)"
+    },
+    "market_overview": {
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "status": "success",
+        "data": {
+          "is_market_open": true,
+          "timestamp": "2025-11-28T13:31:19.853115+05:30",
+          "indices": {
+            "NIFTY": {
+              "symbol": "NIFTY 50",
+              "price": 26229.5,
+              "change": -7.95,
+              "change_percent": -0.03,
+              "open": 26237.45,
+              "high": 26280.75,
+              "low": 26172.4,
+              "prev_close": 26237.45,
+              "volume": null,
+              "last_updated": "2025-11-28T13:31:19.852947+05:30"
+            },
+            "SENSEX": {
+              "symbol": "SENSEX",
+              "price": 85808.2,
+              "change": 16.65,
+              "change_percent": 0.02,
+              "open": 85791.55,
+              "high": 85969.89,
+              "low": 85577.82,
+              "prev_close": 85791.55,
+              "volume": null,
+              "last_updated": "2025-11-28T13:31:19.852971+05:30"
+            }
+          },
+          "market_breadth": {
+            "advances": 6,
+            "declines": 2,
+            "unchanged": 0,
+            "advance_decline_ratio": 3.0,
+            "new_highs": null,
+            "new_lows": null
+          },
+          "volatility": {
+            "india_vix": 11.18,
+            "vix_change": -0.61,
+            "vix_change_percent": -5.17,
+            "interpretation": "Low"
+          },
+          "sector_performance": {
+            "IT": {
+              "change_percent": -0.08,
+              "symbol": "NIFTY IT"
+            },
+            "BANK": {
+              "change_percent": 0.07,
+              "symbol": "NIFTY BANK"
+            },
+            "AUTO": {
+              "change_percent": 0.47,
+              "symbol": "NIFTY AUTO"
+            },
+            "PHARMA": {
+              "change_percent": 0.23,
+              "symbol": "NIFTY PHARMA"
+            },
+            "FMCG": {
+              "change_percent": 0.15,
+              "symbol": "NIFTY FMCG"
+            },
+            "METAL": {
+              "change_percent": 0.17,
+              "symbol": "NIFTY METAL"
+            }
+          },
+          "top_movers": {
+            "gainers": [],
+            "losers": []
+          }
+        }
+      }
+    },
+    "dashboard_page": {
+      "status_code": 0,
+      "success": false,
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=10)"
+    }
+  }
+}

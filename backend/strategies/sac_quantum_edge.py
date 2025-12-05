@@ -44,17 +44,17 @@ class SACQuantumEdgeStrategy(BaseStrategy):
                 confidence = 0
                 signals_list = []
                 
-                # Factor 1: PCR extreme
-                if pcr > 1.3:
-                    confidence += 30  # High put buying = bearish
+                # Factor 1: PCR extreme (spec thresholds)
+                if pcr > 1.70:
+                    confidence += 30  # Extreme PCR - contrarian bullish
+                    direction = 'CALL'
+                    action = 'BUY'
+                elif pcr < 0.70:
+                    confidence += 25  # Extreme PCR - contrarian bearish
                     direction = 'PUT'
                     action = 'BUY'
-                elif pcr < 0.8:
-                    confidence += 25  # High call buying = bullish (sell puts)
-                    direction = 'PUT'
-                    action = 'SELL'
                 else:
-                    continue
+                    continue  # Only trade in extreme PCR zones
                 
                 # Factor 2: IV regime
                 if iv_rank > 70:

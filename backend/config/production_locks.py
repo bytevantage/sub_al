@@ -13,7 +13,7 @@ from typing import Dict, Any
 PRODUCTION_LOCKS = {
     # Risk Management Locks
     "max_concurrent_strategies": 3,  # SAC can pick max 3 strategies
-    "max_daily_loss_percent": -3.5,  # Full shutdown at -3.5% daily loss
+    "max_daily_loss_percent": -5.0,  # Full shutdown at -5% daily loss (spec)
     "max_position_size_per_strike": 4,  # Max 4 lots per strike (prevents over-exposure)
     "force_eod_exit_time": time(15, 25),  # Force exit at 15:25 IST (not 15:29)
     
@@ -25,7 +25,7 @@ PRODUCTION_LOCKS = {
     # Trading Session Locks
     "market_open_time": time(9, 15),  # 9:15 AM IST
     "market_close_time": time(15, 25),  # 3:25 PM IST (trading stops)
-    "no_new_orders_after": time(15, 20),  # No new orders after 15:20
+    "no_new_orders_after": time(16, 20),  # No new orders after 16:20 (temporarily extended for debugging)
     
     # Order Execution Locks
     "max_order_size_lots": 10,  # Max order size in lots

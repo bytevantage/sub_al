@@ -19,6 +19,9 @@ from sqlalchemy import text
 from pathlib import Path
 import numpy as np
 
+# Import timezone utilities for consistent time handling
+from backend.core.timezone_utils import now_utc, to_ist
+
 # IST timezone for market operations
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -45,6 +48,7 @@ from backend.api.emergency_controls import router as emergency_router, set_app_s
 from backend.api.real_time_metrics_simple import router as real_time_metrics_router
 from backend.api.production_lock_simple import router as production_lock_router
 from backend.api.dashboard import router as dashboard_router, set_trading_system
+from backend.notifications.telegram_notifier import get_telegram_notifier
 from backend.api.settings import router as settings_router
 from backend.api.ml_strategy import router as ml_strategy_router, set_ml_state
 from backend.api.upstox_auth import router as upstox_auth_router
@@ -93,6 +97,7 @@ class TradingSystem:
         self.data_monitor: Optional[MarketDataMonitor] = None
         self.order_lifecycle: Optional[OrderLifecycleManager] = None
         self.trade_reconciliation: Optional[TradeReconciliation] = None
+        self.telegram_notifier = get_telegram_notifier()
         self.sac_agent: Optional[Any] = None  # SAC Meta-Controller
         self.strategy_zoo: Optional[Any] = None  # Strategy Zoo for SAC
         self.sac_enabled = False
@@ -105,7 +110,7 @@ class TradingSystem:
         self.ws_manager = get_ws_manager()  # WebSocket manager
         self.entry_timing = EntryTimingManager()  # Entry timing for pullbacks
         self.recent_signals: deque = deque(maxlen=200)
-        self.last_heartbeat = datetime.now()  # Track if loops are alive
+        self.last_heartbeat = now_utc()  # Store in UTC
         self.recent_signals_path = Path("data/state/recent_signals.json")
         self.recent_signals_path.parent.mkdir(parents=True, exist_ok=True)
         # Load recent signals from disk if available
@@ -439,6 +444,7 @@ class TradingSystem:
             asyncio.create_task(self.trading_loop())
             asyncio.create_task(self.market_data_loop())
             asyncio.create_task(self.risk_monitoring_loop())
+            asyncio.create_task(self.telegram_pnl_update_loop())
             asyncio.create_task(self.performance_aggregator.schedule_daily_aggregation())
             logger.info("✓ Performance aggregation scheduler started (runs at 6:00 PM IST)")
             
@@ -557,10 +563,10 @@ class TradingSystem:
         logger.info("🔄 Trading loop started")
         while self.is_running:
             # Update heartbeat for health checks
-            self.last_heartbeat = datetime.now()
+            self.last_heartbeat = now_utc()
             
             # Refresh market regime every 15 minutes
-            if datetime.now().minute % 15 == 0:  # Every 15 minutes
+            if to_ist(now_utc()).minute % 15 == 0:  # Every 15 minutes
                 try:
                     vix = self.market_data.get_vix() if hasattr(self.market_data, 'get_vix') else None
                     # Old strategy engine removed - using default trend strength
@@ -632,7 +638,9 @@ class TradingSystem:
                                 state = self._build_sac_state(market_state)
                                 # SAC agent returns action (allocation vector), we need strategy index
                                 import random
-                                # For now, select random strategy index (0-5) for exploration
+                                import time
+                                # Fix random exploration - use time-based seed for true randomness
+                                random.seed(int(time.time() * 1000) % 1000000)
                                 selected_strategy_idx = random.randint(0, len(self.strategy_zoo.strategies) - 1)
                                 signals = await self.strategy_zoo.generate_signals(selected_strategy_idx, market_state)
                                 logger.info(f"🎯 SAC selected strategy {selected_strategy_idx}: {self.strategy_zoo.strategies[selected_strategy_idx]['name']}")
@@ -911,9 +919,9 @@ class TradingSystem:
         while self.is_running:
             try:
                 # Check market hours - stop updating after 3:25 PM
-                now = datetime.now(IST).time()
+                now = to_ist(now_utc()).time()
                 market_close = datetime.strptime("15:25", "%H:%M").time()  # 3:25 PM IST
-                is_weekday = datetime.now(IST).weekday() < 5
+                is_weekday = to_ist(now_utc()).weekday() < 5
                 
                 if now > market_close or not is_weekday:
                     # Market closed - longer sleep
@@ -921,7 +929,7 @@ class TradingSystem:
                     continue
                 
                 # Update heartbeat for health checks
-                self.last_heartbeat = datetime.now()
+                self.last_heartbeat = now_utc()
                 
                 # Calculate optimal interval
                 self.market_data_interval = self._calculate_optimal_interval()
@@ -953,7 +961,7 @@ class TradingSystem:
         while self.is_running:
             try:
                 # Update heartbeat to show loop is alive (critical for health checks)
-                self.last_heartbeat = datetime.now()
+                self.last_heartbeat = now_utc()
                 
                 # Get current market state
                 market_state = await self.market_data.get_current_state()
@@ -1280,6 +1288,56 @@ class TradingSystem:
                 else:
                     await asyncio.sleep(10)
     
+    async def telegram_pnl_update_loop(self):
+        """Send P&L updates to Telegram every 30 minutes"""
+        logger.info("📊 Telegram P&L update loop started")
+        
+        while self.is_running:
+            try:
+                # Update heartbeat
+                self.last_heartbeat = now_utc()
+                
+                # Get P&L data
+                positions = await self.order_manager.get_positions()
+                total_pnl = sum(pos.get('pnl', 0) for pos in positions)
+                
+                # Get capital info
+                current_capital = 100000 + total_pnl  # Starting from 100k
+                initial_capital = 100000
+                
+                # Count trades today - use string comparison to avoid timezone issues
+                from datetime import datetime
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                trades_today = 0
+                for pos in positions:
+                    entry_time = pos.get('entry_time')
+                    if entry_time:
+                        # Convert to string and compare dates only
+                        if isinstance(entry_time, str):
+                            entry_date = entry_time.split(' ')[0]  # Get date part
+                        else:
+                            entry_date = str(entry_time).split(' ')[0]
+                        trades_today += 1 if entry_date == today_str else 0
+                
+                pnl_data = {
+                    'total_pnl': total_pnl,
+                    'total_pnl_percentage': (total_pnl / initial_capital) * 100,
+                    'current_capital': current_capital,
+                    'initial_capital': initial_capital,
+                    'open_positions': len(positions),
+                    'trades_today': trades_today
+                }
+                
+                # Send Telegram notification
+                await self.telegram_notifier.send_pnl_update(pnl_data)
+                
+                # Sleep for 30 minutes (1800 seconds)
+                await asyncio.sleep(1800)
+                
+            except Exception as e:
+                logger.error(f"Error in Telegram P&L update loop: {e}")
+                await asyncio.sleep(300)  # Retry after 5 minutes on error
+    
     async def _get_option_ltp(self, symbol: str, strike: float, option_type: str) -> Optional[float]:
         """Get current LTP for an option"""
         try:
@@ -1332,7 +1390,7 @@ class TradingSystem:
                 # Record market data age
                 last_update = market_data.get('last_update')
                 if last_update:
-                    age_seconds = (datetime.now() - last_update).total_seconds()
+                    age_seconds = (now_utc() - last_update).total_seconds()
                     self.metrics_exporter.record_market_data_update(symbol, age_seconds)
                     
         except Exception as e:
@@ -1681,7 +1739,7 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     # Check if loops are actually alive by checking heartbeat
-    heartbeat_age = (datetime.now() - trading_system.last_heartbeat).total_seconds()
+    heartbeat_age = (now_utc() - trading_system.last_heartbeat).total_seconds()
     loops_alive = heartbeat_age < 30  # If no heartbeat in 30s, loops might be dead
     
     return {
@@ -1701,7 +1759,7 @@ async def database_health_check():
         session = db.get_session()
         if session is None:
             raise RuntimeError("Database session unavailable")
-        session.execute(text("SELECT 1"))
+        session.execute(text("SELECT 1 as test"))
         session.close()
         return {
             "status": "ok",
@@ -1772,7 +1830,7 @@ async def get_paper_trading_status():
     try:
         # Check cache first
         cache_key = "paper_trading_status"
-        now = datetime.now()
+        now = to_ist(now_utc())
         
         if cache_key in _paper_trading_cache:
             cached_data, cached_time = _paper_trading_cache[cache_key]
@@ -1812,7 +1870,7 @@ async def get_paper_trading_status():
             positions = []
         
         response = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_ist(now_utc()).isoformat(),
             "capital": current_capital,
             "initial_capital": initial_capital,
             "total_pnl": current_capital - initial_capital,
@@ -1834,7 +1892,7 @@ async def get_paper_trading_status():
     except Exception as e:
         logger.error(f"Error generating paper trading status: {e}")
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_ist(now_utc()).isoformat(),
             "capital": 100000,
             "initial_capital": 100000,
             "total_pnl": 0,
@@ -1964,6 +2022,7 @@ async def start_trading():
                 asyncio.create_task(trading_system.trading_loop())
                 asyncio.create_task(trading_system.market_data_loop())
                 asyncio.create_task(trading_system.risk_monitoring_loop())
+                asyncio.create_task(trading_system.telegram_pnl_update_loop())
                 return {"message": "Trading system refreshed", "status": "success"}
             return {"message": "Trading already running", "status": "info"}
     except Exception as e:
@@ -1992,7 +2051,7 @@ async def websocket_endpoint(websocket: WebSocket):
     trading_system.ws_manager.active_connections.add(websocket)
     trading_system.ws_manager.connection_metadata[websocket] = {
         "client_id": client_id,
-        "connected_at": datetime.now(),
+        "connected_at": now_utc(),
         "message_count": 0
     }
     

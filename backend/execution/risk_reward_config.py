@@ -86,7 +86,8 @@ class RiskRewardCalculator:
                          confidence: Optional[float] = None,
                          vix: Optional[float] = None, 
                          adx: Optional[float] = None,
-                         quantity: int = 1) -> Dict:
+                         quantity: int = 1,
+                         max_risk_pct: Optional[float] = None) -> Dict:
         """
         OFFICIAL SPEC: Fixed 18% stop loss, NO tiered targets
         
@@ -103,8 +104,13 @@ class RiskRewardCalculator:
         """
         try:
             # OFFICIAL SPEC: Fixed 18% stop loss (dynamic 15-24% with VIX)
-            vix_multiplier = 1.0 + (max(0, (vix or 20) - 15) * 0.02)  # 0.02 per VIX point above 15
-            max_sl_pct = min(0.24, max(0.15, 0.18 * vix_multiplier))  # 15-24% dynamic range
+            # If caller requests an explicit max risk percent (e.g., option-specific wider SL), honor it.
+            if max_risk_pct and max_risk_pct > 0:
+                # Caller may pass 0.30 (30%) or similar; accept reasonable ranges up to 50%
+                max_sl_pct = float(max_risk_pct)
+            else:
+                vix_multiplier = 1.0 + (max(0, (vix or 20) - 15) * 0.02)  # 0.02 per VIX point above 15
+                max_sl_pct = min(0.24, max(0.15, 0.18 * vix_multiplier))  # 15-24% dynamic range
             
             # Calculate stop loss based on direction
             if signal_direction.upper() == 'CALL':
@@ -121,6 +127,8 @@ class RiskRewardCalculator:
                 'sl_pct': round(max_sl_pct * 100, 1),
                 'regime': 'FIXED_SPEC',
                 'rr_ratio': 4.2,  # Achieved system R:R
+                'rr_final': '1:4.2',  # Added for strategy compatibility
+                'risk_pct': round(max_sl_pct * 100, 1),  # Added for strategy compatibility
                 'risk_amount': entry_price * max_sl_pct * quantity,
                 # NO TP1/TP2/TP3 per official spec
                 'tp1': 0,
@@ -182,7 +190,8 @@ def calculate_targets(entry_price: float, signal_direction: str,
                      confidence: Optional[float] = None,
                      vix: Optional[float] = None, 
                      adx: Optional[float] = None,
-                     quantity: int = 1) -> Dict:
+                     quantity: int = 1,
+                     max_risk_pct: Optional[float] = None) -> Dict:
     """
     Convenience function for target calculation
     
@@ -197,4 +206,4 @@ def calculate_targets(entry_price: float, signal_direction: str,
     Returns:
         Dictionary with stop_loss, tp1, tp2, tp3, and metadata
     """
-    return calculator.calculate_targets(entry_price, signal_direction, confidence, vix, adx, quantity)
+    return calculator.calculate_targets(entry_price, signal_direction, confidence, vix, adx, quantity, max_risk_pct)

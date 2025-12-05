@@ -6,11 +6,76 @@ PERMANENT STRATEGY COUNT: 6 (no more, no less)
 """
 
 from typing import Dict, List
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from backend.strategies.strategy_base import Signal
 from backend.core.logger import get_logger
 from backend.config.underlying_config import underlying_manager
 
 logger = get_logger(__name__)
+
+# === TIME & RISK MANAGER ===
+IST = ZoneInfo("Asia/Kolkata")
+
+def get_current_hour():
+    """Get current time in HHMM format for IST"""
+    return datetime.now(IST).strftime("%H%M")
+
+def get_position_age_minutes(position):
+    """Calculate position age in minutes"""
+    if hasattr(position, 'entry_time'):
+        if isinstance(position.entry_time, str):
+            entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
+            if entry_time.tzinfo is None:
+                entry_time = entry_time.replace(tzinfo=IST)
+        else:
+            entry_time = position.entry_time
+        return (datetime.now(IST) - entry_time).total_seconds() / 60
+    return 0
+
+def is_gamma_scalping_allowed():
+    """Check if gamma scalping strategies are allowed based on time"""
+    now = datetime.now(IST)
+    hour = now.hour
+    minute = now.minute
+    
+    # Block: 09:15-09:30 (opening volatility)
+    if hour == 9 and minute < 30:
+        return False, "Opening volatility - no gamma scalping"
+    
+    # Block: After 13:00 (theta burn period)
+    if hour >= 13:
+        return False, "Post-13:00 - no long gamma allowed"
+    
+    # Allow: 09:30-13:00
+    return True, "Gamma scalping allowed"
+
+def should_use_short_premium():
+    """Check if should switch to short premium strategies"""
+    now = datetime.now(IST)
+    hour = now.hour
+    
+    # After 13:00, only short premium allowed
+    if hour >= 13:
+        return True, "Post-13:00 - short premium only"
+    
+    return False, "Long gamma allowed"
+
+def should_force_exit_early():
+    """Check if should force exit all positions before theta burn"""
+    now = datetime.now(IST)
+    hour = now.hour
+    minute = now.minute
+    
+    # Force exit after 14:30
+    if hour >= 14 and minute >= 30:
+        return True, "Force exit before 14:30 theta burn"
+    
+    return False, "Hold positions"
+
+def get_option_stop_loss_pct():
+    """Get wider stop loss for options"""
+    return 0.30  # 30% for options vs 18% for equities
 
 
 class StrategyZoo:
@@ -78,7 +143,7 @@ class StrategyZoo:
     
     async def generate_signals(self, strategy_idx: int, market_data: Dict) -> List[Signal]:
         """
-        Generate signals from the selected strategy
+        Generate signals from the selected strategy with time-based filtering
         
         Args:
             strategy_idx: Index of selected strategy (0-6 for 7 strategies)
@@ -95,6 +160,27 @@ class StrategyZoo:
             strategy = self.strategies[strategy_idx]
             logger.info(f"Executing strategy: {strategy['name']} (index: {strategy_idx})")
             
+            # === TIME-BASED STRATEGY FILTERING ===
+            current_time = get_current_hour()
+            
+            # Check if strategy is allowed at current time
+            if strategy['name'] in ['Gamma Scalping', 'Long Straddle']:
+                allowed, reason = is_gamma_scalping_allowed()
+                if not allowed:
+                    logger.info(f"🛑 Time filter: {strategy['name']} blocked - {reason}")
+                    return []
+                logger.info(f"✅ Time filter: {strategy['name']} allowed - {reason}")
+            
+            # After 13:00, force switch to short premium strategies
+            use_short_premium, reason = should_use_short_premium()
+            if use_short_premium:
+                if strategy['name'] in ['Gamma Scalping', 'Long Straddle', 'Quantum Edge V2']:
+                    logger.info(f"🔄 Post-13:00: Switching from {strategy['name']} to short premium")
+                    # Force switch to IV Rank Trading (short premium)
+                    strategy_idx = 2  # IV Rank Trading index
+                    strategy = self.strategies[strategy_idx]
+                    logger.info(f"✅ Auto-switched to: {strategy['name']} (short premium)")
+            
             # Generate signal based on strategy type
             signals = await self._execute_strategy(strategy, market_data)
             
@@ -104,6 +190,7 @@ class StrategyZoo:
                 signal.metadata['sac_selected'] = True
                 signal.metadata['strategy_index'] = strategy_idx
                 signal.metadata['strategy_name'] = strategy['name']
+                signal.metadata['time_filter'] = current_time
                 signal.strategy_id = f"sac_{strategy['id']}"
                 signal.strategy = strategy['name']
             
@@ -124,6 +211,24 @@ class StrategyZoo:
         
         strategy_id = strategy['id']
         signals = []
+        
+        # TEST MODE: Force signal generation for testing (can be toggled via config)
+        TEST_MODE = False  # DISABLED - use real strategies
+        
+        # Get basic market data for test mode
+        symbol = underlying_manager.get_current_underlying()
+        if not underlying_manager.is_allowed(symbol):
+            symbol = underlying_manager.get_random_underlying()
+        
+        symbol_data = market_data.get(symbol, {})
+        spot_price = symbol_data.get('spot_price', 26250)  # Fallback spot price
+        # Fix expiry: SENSEX expires on Thursday (2 days), NIFTY on Friday (3 days)
+        expiry_days = 2 if symbol == 'SENSEX' else 3
+        expiry = datetime.now() + timedelta(days=expiry_days)
+        
+        if TEST_MODE:
+            logger.info(f"🧪 TEST MODE: Forcing signal generation for {strategy_id}")
+            return self._generate_test_signal(strategy_id, symbol, spot_price, expiry)
         
         # ENFORCE: Only use NIFTY and SENSEX
         symbol = underlying_manager.get_current_underlying()
@@ -158,7 +263,10 @@ class StrategyZoo:
             pcr = nifty_data.get('pcr', 1.0)
             logger.info(f"Using NIFTY PCR ({pcr:.2f}) for SENSEX trading")
         
-        iv_rank = symbol_data.get('iv_rank', 50)
+        iv_rank = symbol_data.get('iv_rank', 50)  # Now available at top level after market_data.py fix
+        
+        # Log strategy execution details
+        logger.info(f"🎯 Executing {strategy_id} for {symbol}: PCR={pcr:.3f} , IV Rank={iv_rank}%, Spot={spot_price}")
         
         # Get option chain - it's a dict with 'calls' and 'puts' keys (NOT 'option_chain')
         option_chain_data = symbol_data.get('option_chain', {})
@@ -170,6 +278,10 @@ class StrategyZoo:
         if not option_chain_data or not isinstance(option_chain_data, dict):
             logger.warning(f"No option chain data for {symbol}")
             return []
+        
+        # Get expiry - define early to avoid NameError
+        expiry_days = 2 if symbol == 'SENSEX' else 3
+        expiry = datetime.now() + timedelta(days=expiry_days)
         
         # The option chain structure has 'calls' and 'puts' as separate dicts
         calls_dict = option_chain_data.get('calls', {})
@@ -183,11 +295,11 @@ class StrategyZoo:
         
         # Get PCR direction using FINAL UNIVERSAL VERSION (lock this forever)
         def get_pcr_signal(pcr):
-            if pcr > 1.70:   return "CONTRARIAN_BULLISH"   # extreme fear → buy calls
-            if pcr > 1.20:   return "BEARISH"             # normal bearish → lean puts (spreads only)
-            if pcr < 0.70:   return "CONTRARIAN_BEARISH"  # extreme greed → buy puts
-            if pcr < 0.90:   return "BULLISH"             # normal bullish → lean calls (spreads only)
-            return "NEUTRAL"                              # short strangle territory
+            if pcr > 1.70:   return "CONTRARIAN_BULLISH"   # Extreme PCR - bullish contrarian
+            if pcr > 1.20:   return "BEARISH"             # High PCR - bearish → lean puts
+            if pcr < 0.70:   return "CONTRARIAN_BEARISH"  # Extreme PCR - bearish contrarian
+            if pcr < 0.90:   return "BULLISH"             # Low PCR - bullish → lean calls
+            return "NEUTRAL"                              # Short strangle territory
         
         pcr_signal = get_pcr_signal(pcr)
         
@@ -266,14 +378,15 @@ class StrategyZoo:
                 vix = technical_indicators.get('vix', 15)
                 adx = technical_indicators.get('adx', 25)
             
-            # Calculate dynamic targets for straddle
+            # Calculate dynamic targets for straddle with option-specific risk
             targets = calculate_targets(
                 entry_price=total_premium,
                 signal_direction='CALL',  # Direction doesn't matter for straddle premium
                 confidence=confidence,
                 vix=vix,
                 adx=adx,
-                quantity=1
+                quantity=1,
+                max_risk_pct=get_option_stop_loss_pct()  # Use 30% for options
             )
             
             target_price = targets['tp3']  # Final target for total premium
@@ -287,7 +400,8 @@ class StrategyZoo:
             )
             
             # Get expiry
-            expiry = datetime.now() + timedelta(days=3)
+            expiry_days = 2 if symbol == 'SENSEX' else 3
+            expiry = datetime.now() + timedelta(days=expiry_days)
             
             # Create CALL leg signal
             call_signal = Signal(
@@ -345,7 +459,7 @@ class StrategyZoo:
             technical_indicators = symbol_data.get('technical_indicators', {})
             adx = technical_indicators.get('adx', 20)
             
-            if iv_rank > 75:
+            if iv_rank > 75:  # Original production threshold
                 # High IV - SELL strangle/iron condor
                 logger.info(f"📊 IV Rank Trading: High IV ({iv_rank}%) - SELLING strangle")
                 # Create short strangle - sell both CALL and PUT
@@ -372,7 +486,7 @@ class StrategyZoo:
                 
                 return [call_signal, put_signal]
                 
-            elif iv_rank < 25 and adx > 35:
+            elif iv_rank < 25 and adx > 35:  # Original production thresholds
                 # Low IV + very strong trend - BUY directional only
                 logger.info(f"📊 IV Rank Trading: Low IV ({iv_rank}%) + Very Strong Trend (ADX {adx}) - BUYING directional")
                 if pcr_signal in ["CONTRARIAN_BULLISH", "BULLISH"]:
@@ -469,15 +583,22 @@ class StrategyZoo:
                 logger.info("📅 Quantum Edge on expiry day - reduced confidence")
                 # Continue with lower confidence instead of blocking
             
-            # Quantum Edge: ONLY trade in EXTREME CONTRARIAN PCR zones (>1.70 or <0.70)
-            if pcr_signal == "CONTRARIAN_BULLISH":
-                direction = 'CALL'  # Extreme fear → buy calls (contrarian)
+            # Quantum Edge: Trade in all PCR ranges with appropriate direction
+            if pcr_signal == "CONTRARIAN_BULLISH" or pcr_signal == "BULLISH":
+                direction = 'CALL'  # Bullish signal → buy calls
                 strike = underlying_manager.round_strike(symbol, spot_price * 1.01)
-            elif pcr_signal == "CONTRARIAN_BEARISH":
-                direction = 'PUT'  # Extreme greed → buy puts (contrarian)
+            elif pcr_signal == "CONTRARIAN_BEARISH" or pcr_signal == "BEARISH":
+                direction = 'PUT'  # Bearish signal → buy puts
                 strike = underlying_manager.round_strike(symbol, spot_price * 0.99)
-            else:
-                return []  # NO TRADE in normal PCR range - only extreme zones
+            else:  # NEUTRAL
+                # In neutral PCR, use IV rank to decide
+                if iv_rank > 70:
+                    # High IV - sell strangle
+                    return []  # Skip for now, add strangle logic later
+                else:
+                    # Low/Mid IV - buy straddle or skip
+                    direction = 'CALL'  # Default to calls in neutral
+                    strike = underlying_manager.round_strike(symbol, spot_price * 1.01)
                 
         elif strategy_id == 'quantum_edge_v2':
             # Quantum Edge V2: TFT + SAC hybrid - can trade full day
@@ -496,15 +617,26 @@ class StrategyZoo:
                         strategy['current_allocation'] = 0.45  # Up to 45-60%
                         break
             
-            # Quantum Edge V2: ONLY trade in EXTREME CONTRARIAN PCR zones (>1.70 or <0.70)
-            if pcr_signal == "CONTRARIAN_BULLISH":
-                direction = 'CALL'  # Extreme fear → buy calls (contrarian)
+            # Quantum Edge V2: Trade in all PCR ranges with enhanced logic
+            if pcr_signal == "CONTRARIAN_BULLISH" or pcr_signal == "BULLISH":
+                direction = 'CALL'  # Bullish signal → buy calls
                 strike = underlying_manager.round_strike(symbol, spot_price * 1.01)
-            elif pcr_signal == "CONTRARIAN_BEARISH":
-                direction = 'PUT'  # Extreme greed → buy puts (contrarian)
+            elif pcr_signal == "CONTRARIAN_BEARISH" or pcr_signal == "BEARISH":
+                direction = 'PUT'  # Bearish signal → buy puts
                 strike = underlying_manager.round_strike(symbol, spot_price * 0.99)
-            else:
-                return []  # NO TRADE in normal PCR range - only extreme zones
+            else:  # NEUTRAL
+                # In neutral PCR, use VIX to decide strategy
+                if vix > 25:
+                    # High VIX - sell premium
+                    return []  # Skip for now, add premium selling logic
+                else:
+                    # Normal VIX - directional based on ADX
+                    if adx > 30:
+                        direction = 'CALL'  # Trending up
+                        strike = underlying_manager.round_strike(symbol, spot_price * 1.01)
+                    else:
+                        direction = 'PUT'  # Ranging market
+                        strike = underlying_manager.round_strike(symbol, spot_price * 0.99)
             
         elif strategy_id == 'default':
             # Default Strategy: Time-filtered 09:15-14:00 - ONLY EXTREME CONTRARIAN PCR
@@ -518,15 +650,21 @@ class StrategyZoo:
                 logger.info(f"⏰ Default Strategy outside window (09:15-14:00): {current_hour:02d}:{current_minute:02d}")
                 return []
             
-            # Default Strategy: ONLY trade in EXTREME CONTRARIAN PCR zones (>1.70 or <0.70)
-            if pcr_signal == "CONTRARIAN_BULLISH":
-                direction = 'CALL'  # Extreme fear → buy calls (contrarian)
+            # Default Strategy: Trade in all PCR ranges with conservative approach
+            if pcr_signal == "CONTRARIAN_BULLISH" or pcr_signal == "BULLISH":
+                direction = 'CALL'  # Bullish signal → buy calls
                 strike = underlying_manager.round_strike(symbol, spot_price * 1.01)
-            elif pcr_signal == "CONTRARIAN_BEARISH":
-                direction = 'PUT'  # Extreme greed → buy puts (contrarian)
+            elif pcr_signal == "CONTRARIAN_BEARISH" or pcr_signal == "BEARISH":
+                direction = 'PUT'  # Bearish signal → buy puts
                 strike = underlying_manager.round_strike(symbol, spot_price * 0.99)
-            else:
-                return []  # NO TRADE in normal PCR range - only extreme zones
+            else:  # NEUTRAL
+                # In neutral PCR, use IV rank to decide
+                if iv_rank > 70:
+                    return []  # Skip high IV neutral markets
+                else:
+                    # Low/Mid IV - default to calls for upside potential
+                    direction = 'CALL'
+                    strike = underlying_manager.round_strike(symbol, spot_price * 1.01)
         
         # Log PCR analysis for debugging
         logger.info(f"🎯 PCR Analysis: {symbol} PCR={pcr:.2f} → {pcr_signal} → {direction} {strike}")
@@ -572,14 +710,15 @@ class StrategyZoo:
             vix = technical_indicators.get('vix', 15)
             adx = technical_indicators.get('adx', 25)
             
-        # Calculate dynamic targets based on regime
+        # Calculate dynamic targets based on regime with option-specific risk
         targets = calculate_targets(
             entry_price=entry_price,
             signal_direction=direction,
             confidence=confidence,
             vix=vix,
             adx=adx,
-            quantity=1  # Will be adjusted later
+            quantity=1,  # Will be adjusted later
+            max_risk_pct=get_option_stop_loss_pct()  # Use 30% for options
         )
         
         # Use the calculated targets
@@ -594,7 +733,8 @@ class StrategyZoo:
         )
         
         # Get expiry (nearest weekly)
-        expiry = datetime.now() + timedelta(days=3)
+        expiry_days = 2 if symbol == 'SENSEX' else 3
+        expiry = datetime.now() + timedelta(days=expiry_days)
         
         # Create signal with correct parameters
         signal = Signal(
@@ -669,3 +809,80 @@ class StrategyZoo:
             import traceback
             logger.error(traceback.format_exc())
             return 0.0
+    
+    def _generate_test_signal(self, strategy_id: str, symbol: str, spot_price: float, expiry) -> List[Signal]:
+        """
+        Generate test signals for all strategies to verify system functionality
+        All test signals are marked with TEST_MODE metadata for easy cleanup
+        """
+        from datetime import datetime, timedelta
+        from backend.strategies.strategy_base import Signal
+        
+        logger.info(f"🧪 Generating TEST signal for {strategy_id} on {symbol}")
+        
+        # Define test signal patterns for each strategy
+        test_patterns = {
+            'quantum_edge_v2': {'direction': 'CALL', 'strike_offset': 0.01, 'action': 'BUY'},
+            'quantum_edge': {'direction': 'PUT', 'strike_offset': -0.01, 'action': 'BUY'},
+            'default': {'direction': 'CALL', 'strike_offset': 0.02, 'action': 'BUY'},
+            'gamma_scalping': {'direction': 'CALL', 'strike_offset': 0.01, 'action': 'BUY'},  # Will create straddle
+            'vwap_deviation': {'direction': 'PUT', 'strike_offset': -0.015, 'action': 'BUY'},
+            'iv_rank_trading': {'direction': 'CALL', 'strike_offset': 0.01, 'action': 'BUY'}
+        }
+        
+        pattern = test_patterns.get(strategy_id, {'direction': 'CALL', 'strike_offset': 0.01, 'action': 'BUY'})
+        
+        # Calculate strike
+        if pattern['direction'] == 'CALL':
+            strike = spot_price * (1 + pattern['strike_offset'])
+        else:  # PUT
+            strike = spot_price * (1 + pattern['strike_offset'])
+        
+        strike = underlying_manager.round_strike(symbol, strike)
+        
+        # Create test signal
+        signal = Signal(
+            strategy_name=f"TEST_{strategy_id}",
+            symbol=symbol,
+            direction=pattern['direction'],
+            action=pattern['action'],
+            strike=strike,
+            expiry=expiry.strftime('%Y-%m-%d'),
+            entry_price=50.0,  # Fixed test price
+            strength=75,  # Fixed test strength
+            reason=f"TEST MODE - {strategy_id} signal generation"
+        )
+        
+        # Mark as test signal for easy identification and cleanup
+        signal.metadata = {
+            'TEST_MODE': True,
+            'test_timestamp': datetime.now().isoformat(),
+            'original_strategy': strategy_id,
+            'test_only': True
+        }
+        signal.strategy_id = f"test_{strategy_id}"
+        signal.ml_probability = 0.8  # Fixed test confidence
+        
+        # Special handling for gamma scalping (create straddle)
+        if strategy_id == 'gamma_scalping':
+            # Create matching put signal
+            put_signal = Signal(
+                strategy_name=f"TEST_{strategy_id}",
+                symbol=symbol,
+                direction='PUT',
+                action='BUY',
+                strike=strike,
+                expiry=expiry.strftime('%Y-%m-%d'),
+                entry_price=50.0,
+                strength=75,
+                reason=f"TEST MODE - {strategy_id} straddle (PUT leg)"
+            )
+            put_signal.metadata = signal.metadata.copy()
+            put_signal.strategy_id = f"test_{strategy_id}"
+            put_signal.ml_probability = 0.8
+            
+            logger.info(f"🧪 TEST {strategy_id}: Generated straddle - CALL @ {strike}, PUT @ {strike}")
+            return [signal, put_signal]
+        
+        logger.info(f"🧪 TEST {strategy_id}: Generated {pattern['direction']} @ {strike}")
+        return [signal]

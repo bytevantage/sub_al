@@ -249,7 +249,7 @@ class DeltaHedger:
             # For futures, price is approximately equal to spot price
             futures_price = spot_price
             
-            # Create hedge order
+            # Create hedge order with option contract details
             hedge_order = {
                 'symbol': symbol,
                 'instrument_type': 'FUTURES',
@@ -261,7 +261,12 @@ class DeltaHedger:
                 'strategy_name': 'Delta_Hedge',
                 'is_hedge': True,
                 'hedge_reason': f"Auto delta hedge: {direction} {abs(quantity)}",
-                'timestamp': now_ist().isoformat()
+                'timestamp': now_ist().isoformat(),
+                # Add option contract details for position tracking (use expected field names)
+                'option_symbol': f"{symbol}FUT",
+                'strike': 0,  # Futures have no strike
+                'expiry': now_ist().strftime('%Y-%m-%d'),  # Current expiry for futures
+                'option_type': 'FUT'  # Futures type
             }
             
             # Place order through order manager

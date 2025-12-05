@@ -1,0 +1,40 @@
+{
+  "timestamp": "2025-11-28T13:23:09.055351",
+  "results": {
+    "api_health": {
+      "status": "\u2705 PASS",
+      "response": 200,
+      "data": "{\"message\":\"Advanced Options Trading System API\",\"version\":\"1.0.0\",\"status\":\"running\"}"
+    },
+    "dashboard_page": {
+      "status": "\u2705 PASS",
+      "response": 200,
+      "content_length": 34053
+    },
+    "capital": {
+      "status": "\u2705 PASS",
+      "current_capital": 99904.0,
+      "today_pnl": -96.00000000000023
+    },
+    "positions": {
+      "status": "\u2705 PASS",
+      "position_count": 2,
+      "total_unrealized": -96.0
+    },
+    "risk_metrics": {
+      "status": "\u2705 PASS",
+      "daily_pnl": -96.0,
+      "capital_utilization": 0.0
+    },
+    "health": {
+      "status": "\u26a0\ufe0f WARNING",
+      "overall_status": "critical",
+      "checks": 5
+    },
+    "trading_system": {
+      "status": "\u2705 PASS",
+      "trading_system_available": true,
+      "type": "TradingSystem"
+    }
+  }
+}

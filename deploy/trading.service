@@ -1,0 +1,19 @@
+[Unit]
+Description=srb-algo trading engine
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+# Update the path below to the deploy user home and repo path
+WorkingDirectory=/home/youruser/public_html/srb-algo
+EnvironmentFile=/home/youruser/public_html/srb-algo/.env
+ExecStart=/home/youruser/public_html/srb-algo/venv/bin/python3 backend/main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=srb-algo
+
+[Install]
+WantedBy=multi-user.target

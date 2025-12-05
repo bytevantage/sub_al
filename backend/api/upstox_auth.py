@@ -99,6 +99,8 @@ async def get_token_status():
             "message": f"Token age: {age_hours:.1f} hours" if not is_expired else "Token expired",
             "valid": is_valid and not is_expired,
             "age_hours": round(age_hours, 1),
+            "time_remaining_hours": round(24 - age_hours, 1) if not is_expired else 0,  # Add for dashboard compatibility
+            "time_remaining_seconds": round((24 - age_hours) * 3600, 0) if not is_expired else 0,  # Add for dashboard compatibility
             "created_at": created_at
         }
         

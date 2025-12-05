@@ -3,6 +3,7 @@ Risk Manager
 Manages trading risk and position sizing
 """
 
+import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, time
 from backend.core.config import config
@@ -86,9 +87,7 @@ class RiskManager:
         self.strategy_watchdog = StrategyWatchdog(
             min_trades_for_evaluation=20,
             min_win_rate=watchdog_win_rate / 100.0,  # Convert to decimal
-            max_consecutive_losses=watchdog_consecutive_losses,
-            max_drawdown_pct=0.15,
-            paper_trading=self.is_paper_mode  # Disable watchdog in paper trading for ML training
+            max_consecutive_losses=watchdog_consecutive_losses
         )
         
         # Training dataset pipeline
@@ -433,20 +432,26 @@ class RiskManager:
             return False  # Conservative: don't trigger on error
     
     def _convert_numpy_types(self, data):
-        """Convert numpy types to native Python types for database compatibility"""
-        import numpy as np
-        if isinstance(data, dict):
-            return {k: self._convert_numpy_types(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return [self._convert_numpy_types(item) for item in data]
-        elif isinstance(data, (np.float32, np.float64)):
-            return float(data)
-        elif isinstance(data, (np.int32, np.int64)):
+        """Convert numpy types to native Python types for JSON serialization"""
+        if isinstance(data, np.integer):
             return int(data)
+        elif isinstance(data, np.floating):
+            return float(data)
         elif isinstance(data, np.ndarray):
             return data.tolist()
         else:
             return data
+    
+    def _calculate_pnl_percentage(self, net_pnl: float, entry_price: float, quantity: int, direction: str = 'SELL') -> float:
+        """Calculate P&L percentage with correct direction logic"""
+        if entry_price * quantity == 0:
+            return 0.0
+        
+        # For SELL positions (most options trades), percentage is based on premium received
+        if direction == 'SELL':
+            return (net_pnl / (entry_price * quantity)) * 100
+        else:  # BUY
+            return (net_pnl / (entry_price * quantity)) * 100
     
     def record_trade(self, trade: Dict, market_state: Dict = None):
         """Record completed trade in memory, metrics, database, watchdog, and training dataset"""
@@ -579,7 +584,7 @@ class RiskManager:
                     brokerage=fee_breakdown['total_brokerage'],
                     taxes=fee_breakdown['stt'] + fee_breakdown['stamp_duty'],
                     net_pnl=net_pnl,
-                    pnl_percentage=(net_pnl / (entry_price * quantity)) * 100 if entry_price * quantity > 0 else 0,
+                    pnl_percentage=self._calculate_pnl_percentage(net_pnl, entry_price, quantity, trade.get('direction', 'SELL')),
                     strategy_name=strategy,
                     signal_strength=trade.get('signal_strength', 0),
                     ml_score=trade.get('ml_confidence', 0),
@@ -689,12 +694,38 @@ class RiskManager:
             invested = entry_price * quantity
             pnl_pct = (unrealized / invested * 100) if invested else 0.0
             entry_time = pos.get('entry_time')
+            # Convert CALL/PUT to CE/PE for dashboard
+            instrument_type = pos.get('instrument_type', '')
+            option_type = 'CE' if instrument_type == 'CALL' else 'PE' if instrument_type == 'PUT' else ''
+            
+            # Get or calculate target price
+            target_price = pos.get('target_price', 0)
+            if target_price == 0:
+                # Set default target based on strategy and direction
+                strategy = pos.get('strategy', '').lower()
+                if 'gamma' in strategy:
+                    target_price = entry_price * 1.15  # 15% target for gamma scalping
+                elif 'quantum' in strategy:
+                    target_price = entry_price * 1.25  # 25% target for quantum edge
+                elif 'default' in strategy:
+                    target_price = entry_price * 1.20  # 20% target for default
+                elif 'iv_rank' in strategy:
+                    target_price = entry_price * 1.30  # 30% target for IV rank
+                elif 'vwap' in strategy:
+                    target_price = entry_price * 1.15  # 15% target for VWAP
+                else:
+                    target_price = entry_price * 1.15  # Default 15% target
+                
+                # Update the position with calculated target price for future reference
+                pos['target_price'] = target_price
+            
             summaries.append({
                 'id': pos.get('id'),
                 'symbol': pos.get('symbol'),
                 'direction': direction,
                 'strike_price': pos.get('strike_price', 0),  # Fixed: was 'strike'
-                'instrument_type': pos.get('instrument_type', ''),  # Added: CALL/PUT
+                'instrument_type': instrument_type,  # CALL/PUT
+                'option_type': option_type,  # CE/PE for dashboard
                 'expiry': pos.get('expiry'),
                 'quantity': quantity,
                 'entry_price': round(entry_price, 2),
@@ -709,8 +740,26 @@ class RiskManager:
                 'trailing_sl': pos.get('trailing_sl', 0),
                 'target_price': pos.get('target_price', 0),
                 'highest_price': pos.get('highest_price', entry_price),
+                # Calculate target levels for dashboard (T1/T2/T3) - only if target_price exists
+                'target_1': self._calculate_target_1(entry_price, target_price) if target_price > 0 else 0,
+                'target_2': target_price if target_price > 0 else 0,
+                'target_3': self._calculate_target_3(entry_price, target_price) if target_price > 0 else 0,
             })
         return summaries
+
+    def _calculate_target_1(self, entry_price: float, target_price: float) -> float:
+        """Calculate T1 (50% of target) - CORRECTED for option buying"""
+        if entry_price <= 0 or target_price <= 0:
+            return 0.0
+        # For option buying, targets should be HIGHER than entry price
+        return round(entry_price + (target_price - entry_price) * 0.5, 2)  # 50% of target
+
+    def _calculate_target_3(self, entry_price: float, target_price: float) -> float:
+        """Calculate T3 (150% of target) - CORRECTED for option buying"""
+        if entry_price <= 0 or target_price <= 0:
+            return 0.0
+        # For option buying, targets should be HIGHER than entry price
+        return round(entry_price + (target_price - entry_price) * 1.5, 2)  # 150% of target
 
     def get_metrics_summary(self) -> Dict:
         """Aggregate risk metrics for API consumption"""
@@ -892,6 +941,22 @@ class RiskManager:
         if current_time >= production_eod_time:
             logger.info(f"🔒 PRODUCTION EOD exit triggered at {current_time.strftime('%H:%M:%S')} IST "
                        f"(lock time: {production_eod_time.strftime('%H:%M')}) - closing all positions")
+            return True
+        return False
+    
+    def should_stop_new_orders(self) -> bool:
+        """
+        Check if new orders should be stopped (15:20 PM IST)
+        
+        Returns:
+            True if time is after no-new-orders cutoff (15:20 PM IST)
+        """
+        no_orders_time = PRODUCTION_LOCKS["no_new_orders_after"]
+        current_time = now_ist().time()
+        
+        if current_time >= no_orders_time:
+            logger.info(f"⛔ NO NEW ORDERS cutoff at {current_time.strftime('%H:%M:%S')} IST "
+                       f"(cutoff time: {no_orders_time.strftime('%H:%M')}) - stopping new position generation")
             return True
         return False
     

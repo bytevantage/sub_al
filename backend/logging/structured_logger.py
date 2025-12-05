@@ -37,7 +37,7 @@ class StructuredJSONLogger:
                 
                 # Add custom fields
                 if not log_record.get('timestamp'):
-                    log_record['timestamp'] = datetime.utcnow().isoformat()
+                    log_record['timestamp'] = now_ist().isoformat()
                 
                 if not log_record.get('level'):
                     log_record['level'] = record.levelname

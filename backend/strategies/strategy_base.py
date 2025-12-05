@@ -253,12 +253,13 @@ class BaseStrategy(ABC):
         
         # Calculate target and stop loss
         target_percent = base_target / 100
+        target_price = entry_price * (1 + target_percent)  # Main target price
         stop_percent = 0.3  # 30% stop loss (unchanged)
         
-        # Multiple target levels for partial exits
-        target_1 = entry_price * (1 + target_percent * 0.5)  # T1: 50% of main target
-        target_2 = entry_price * (1 + target_percent)        # T2: Main target
-        target_3 = entry_price * (1 + target_percent * 1.5)  # T3: 150% of main target
+        # Multiple target levels for partial exits - CORRECTED for option buying
+        target_1 = entry_price + (target_price - entry_price) * 0.5  # T1: 50% of main target
+        target_2 = target_price  # T2: Main target  
+        target_3 = entry_price + (target_price - entry_price) * 1.5  # T3: 150% of main target
         
         stop_loss = entry_price * (1 - stop_percent)
         

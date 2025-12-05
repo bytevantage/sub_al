@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/capital", tags=["capital"])
 
 # Cache for capital data to reduce database load
 _capital_cache = {}
-_capital_cache_timeout = 10  # 10 seconds cache
+_capital_cache_timeout = 2  # 2 seconds cache - reduced for fresher data
 
 # ============================================================================
 # PYDANTIC MODELS

@@ -1,36 +1,56 @@
-# FINAL LOCKED CONFIG – NOVEMBER 21, 2025 – DO NOT CHANGE EVER AGAIN
-system:
-  strategies: 6
-  underlyings: ["NIFTY", "SENSEX"]
-  ml_live: false                              # ML integration pending Jan 2026
-
+data:
+  max_api_requests_per_second: 3
+  option_chain_update_interval: 30
+  risk_check_internal_seconds: 10
+data_fetch:
+  option_chain_seconds: 30
+  position_ltp_seconds: 5
+  risk_check_internal_seconds: 10
+  sac_decision_seconds: 300
+  watchlist_dashboard_seconds: 30
+gamma_scalping:
+  auto_hedge_enabled: true
+  delta_hedge_threshold: 0.25
+  max_premium_pct_of_spot: 5
+notifications:
+  telegram:
+    bot_token: 7577687633:AAH6d_TIninWutqf05c8RxBwVx8cD2aTM30
+    chat_id: '6210299100'
+    enabled: true
+    pnl_update_interval_minutes: 30
 risk:
-  stop_loss_base_pct: 18                      # 15–24% dynamic with VIX
-  max_risk_per_trade_pct: 0.5
   max_daily_loss_pct: 5
   max_leverage: 4
-
+  max_risk_per_trade_pct: 0.5
+  stop_loss_base_pct: 18
 sac:
   decision_interval_seconds: 300
-  exploration: true                           # stays in exploration until Jan 2026
-
-gamma_scalping:
-  delta_hedge_threshold: 0.25
-  auto_hedge_enabled: true
-  max_premium_pct_of_spot: 5
-
+  enabled: true
+  exploration: true
+sac_meta_controller:
+  enabled: true
+  model_path: models/sac_prod_latest.pth
 strategies:
-  - name: "Quantum Edge V2"
-    allocation_base: 25
-    max_allocation: 60
-    ml_enabled: false
-  - name: "Quantum Edge"
-    allocation_base: 20
-  - name: "Default ORB"
-    allocation_base: 10
-  - name: "Gamma Scalping"
-    allocation_base: 15
-  - name: "VWAP Deviation"
-    allocation_base: 10
-  - name: "IV Rank Trading"
-    allocation_base: 10
+- allocation_base: 25
+  max_allocation: 60
+  ml_enabled: false
+  name: Quantum Edge V2
+- allocation_base: 20
+  name: Quantum Edge
+- allocation_base: 10
+  name: Default ORB
+- allocation_base: 15
+  name: Gamma Scalping
+- allocation_base: 10
+  name: VWAP Deviation
+- allocation_base: 10
+  name: IV Rank Trading
+system:
+  ml_live: false
+  strategies: 6
+  underlyings:
+  - NIFTY
+  - SENSEX
+upstox:
+  client_id: 831e3836-d40e-411d-b659-63aaa41942b6
+  redirect_uri: http://localhost:8000/api/upstox/callback

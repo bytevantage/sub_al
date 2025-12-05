@@ -1,12 +1,14 @@
 """
 Database Models for Trade History and Analytics
 SQLAlchemy models for PostgreSQL/TimescaleDB
+STORAGE: All timestamps stored in UTC (raw)
+DISPLAY: All timestamps converted to IST for display/calculations
 """
 
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
-from backend.core.timezone_utils import now_ist
+from backend.core.timezone_utils import now_utc, to_ist
 from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Boolean, Text, Index, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -25,10 +27,10 @@ class Trade(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     trade_id = Column(String(50), unique=True, nullable=False, index=True)
     
-    # Timestamps
-    entry_time = Column(DateTime, nullable=False, index=True)
-    exit_time = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: now_ist().replace(tzinfo=None))
+    # Timestamps (stored in UTC)
+    entry_time = Column(DateTime, nullable=False, index=True)  # UTC
+    exit_time = Column(DateTime, nullable=True)  # UTC
+    created_at = Column(DateTime, default=now_utc)  # UTC
     
     # Symbol & Strike Information
     symbol = Column(String(20), nullable=False, index=True)  # NIFTY, BANKNIFTY
@@ -483,25 +485,26 @@ class OptionSnapshot(Base):
     """
     Historical option chain snapshots with Greeks
     Used for ML training to correlate option data with trade outcomes
+    STORAGE: All timestamps stored in UTC (raw)
     """
     __tablename__ = "option_chain_snapshots"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)  # UTC
     
     # Instrument identification
     symbol = Column(String(20), nullable=False, index=True)  # NIFTY, SENSEX
     strike_price = Column(Float, nullable=False)
     option_type = Column(String(4), nullable=False)  # CALL or PUT
-    expiry = Column(DateTime, nullable=False)
+    expiry = Column(DateTime, nullable=False)  # UTC
     
     # Market data
     ltp = Column(Float, nullable=True)
     bid = Column(Float, nullable=True)
     ask = Column(Float, nullable=True)
-    volume = Column(Integer, nullable=True)
-    oi = Column(Integer, nullable=True)
-    oi_change = Column(Integer, nullable=True)
+    volume = Column(BigInteger, nullable=True)
+    oi = Column(BigInteger, nullable=True)
+    oi_change = Column(BigInteger, nullable=True)
     
     # Greeks (calculated or from API)
     delta = Column(Float, nullable=True)
@@ -531,9 +534,9 @@ class Position(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     position_id = Column(String(50), unique=True, nullable=False, index=True)
     
-    # Timestamps
-    entry_time = Column(DateTime, nullable=False, index=True)
-    last_updated = Column(DateTime, default=lambda: now_ist().replace(tzinfo=None), onupdate=lambda: now_ist().replace(tzinfo=None))
+    # Timestamps (stored in UTC)
+    entry_time = Column(DateTime, nullable=False, index=True)  # UTC
+    last_updated = Column(DateTime, default=now_utc, onupdate=now_utc)  # UTC
     
     # Symbol & Strike Information
     symbol = Column(String(20), nullable=False, index=True)

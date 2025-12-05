@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Hard Reset Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+        .status { margin: 20px 0; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>🔄 Hard Reset Dashboard Cache</h1>
+    <div id="status" class="status info">Clearing all caches...</div>
+    
+    <script>
+        async function hardReset() {
+            const status = document.getElementById('status');
+            
+            // Step 1: Clear all browser caches
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(cacheNames.map(name => caches.delete(name)));
+                    console.log('Cleared all caches:', cacheNames);
+                } catch (e) {
+                    console.error('Error clearing caches:', e);
+                }
+            }
+            
+            // Step 2: Clear storage
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            // Step 3: Clear any service workers
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(registrations.map(reg => reg.unregister()));
+                } catch (e) {
+                    console.error('Error clearing service workers:', e);
+                }
+            }
+            
+            status.innerHTML = '✅ Cache cleared! Redirecting to fresh dashboard...';
+            status.className = 'status success';
+            
+            // Step 4: Redirect to dashboard with fresh timestamp
+            setTimeout(() => {
+                window.location.href = 'index.html?v=' + Date.now();
+            }, 1000);
+        }
+        
+        // Run immediately
+        hardReset();
+    </script>
+</body>
+</html>

@@ -1,19 +1,91 @@
 """
 Timezone Utilities
-Centralized IST timezone handling for consistent datetime operations
+Centralized timezone handling for consistent datetime operations
+STORAGE: All timestamps stored in UTC (raw)
+DISPLAY: All timestamps converted to IST for display/calculations
 """
 
 from datetime import datetime, time, date, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
 
-# IST Timezone constant
+# Timezone constants
 IST = ZoneInfo("Asia/Kolkata")
+UTC = ZoneInfo("UTC")
+
+
+def now_utc() -> datetime:
+    """Get current datetime in UTC timezone (for database storage)"""
+    return datetime.now(UTC)
 
 
 def now_ist() -> datetime:
-    """Get current datetime in IST timezone"""
+    """Get current datetime in IST timezone (for display/calculations)"""
     return datetime.now(IST)
+
+
+def utc_to_ist(dt: datetime) -> datetime:
+    """
+    Convert UTC datetime to IST
+    
+    Args:
+        dt: UTC datetime (can be naive or aware)
+    
+    Returns:
+        IST datetime
+    """
+    if dt.tzinfo is None:
+        # Assume naive datetime is UTC
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(IST)
+
+
+def ist_to_utc(dt: datetime) -> datetime:
+    """
+    Convert IST datetime to UTC
+    
+    Args:
+        dt: IST datetime (can be naive or aware)
+    
+    Returns:
+        UTC datetime
+    """
+    if dt.tzinfo is None:
+        # Assume naive datetime is IST
+        dt = dt.replace(tzinfo=IST)
+    return dt.astimezone(UTC)
+
+
+def to_utc(dt: datetime) -> datetime:
+    """
+    Convert any datetime to UTC for database storage
+    
+    Args:
+        dt: datetime to convert (can be naive or aware)
+    
+    Returns:
+        UTC datetime without timezone info (for database storage)
+    """
+    if dt.tzinfo is None:
+        # Assume naive datetime is IST (most common case)
+        dt = dt.replace(tzinfo=IST)
+    return dt.astimezone(UTC).replace(tzinfo=None)
+
+
+def to_ist(dt: datetime) -> datetime:
+    """
+    Convert any datetime to IST for display/calculations
+    
+    Args:
+        dt: datetime to convert (can be naive or aware)
+    
+    Returns:
+        IST datetime with timezone info
+    """
+    if dt.tzinfo is None:
+        # Assume naive datetime from database is UTC
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(IST)
 
 
 def today_ist() -> date:

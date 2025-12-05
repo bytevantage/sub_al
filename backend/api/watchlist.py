@@ -22,6 +22,74 @@ router = APIRouter(prefix="/api/watchlist", tags=["Watchlist"])
 _watchlist_cache = {}
 _cache_timeout = 60  # 60 seconds cache timeout (increased from 30)
 
+# Signal tracking for stale signal management
+_active_signals = {}  # {signal_id: {timestamp, entry_price, symbol, strike, type}}
+ENTRY_WINDOW_MINUTES = 5  # Signals expire after 5 minutes
+ENTRY_PRICE_DEVIATION_PCT = 2.0  # Remove signal if price moves 2% away from entry
+
+def _generate_signal_id(symbol: str, strike: int, option_type: str) -> str:
+    """Generate unique signal ID"""
+    return f"{symbol}_{strike}_{option_type}"
+
+def _is_signal_stale(signal_id: str, current_price: float) -> bool:
+    """Check if signal is stale based on time and price movement"""
+    if signal_id not in _active_signals:
+        return False
+    
+    signal = _active_signals[signal_id]
+    now = datetime.now()
+    
+    # Check time window
+    signal_age = (now - signal['timestamp']).total_seconds() / 60  # minutes
+    if signal_age > ENTRY_WINDOW_MINUTES:
+        return True
+    
+    # Check price deviation
+    if signal['entry_price'] > 0:
+        price_change_pct = abs(current_price - signal['entry_price']) / signal['entry_price'] * 100
+        if price_change_pct > ENTRY_PRICE_DEVIATION_PCT:
+            return True
+    
+    return False
+
+def _cleanup_stale_signals(current_market_data: dict):
+    """Remove stale signals from active signals list"""
+    stale_signals = []
+    
+    for signal_id, signal in _active_signals.items():
+        symbol = signal['symbol']
+        current_price = 0
+        
+        # Get current price for this signal's option
+        if symbol in current_market_data:
+            option_chain = current_market_data[symbol].get('option_chain', {})
+            strike = signal['strike']
+            option_type = signal['type'].lower()
+            
+            if option_type in option_chain:
+                strike_str = str(strike)
+                if strike_str in option_chain[option_type]:
+                    current_price = option_chain[option_type][strike_str].get('ltp', 0)
+        
+        if _is_signal_stale(signal_id, current_price):
+            stale_signals.append(signal_id)
+    
+    # Remove stale signals
+    for signal_id in stale_signals:
+        del _active_signals[signal_id]
+        logger.info(f"🗑️ Removed stale signal: {signal_id}")
+
+def _add_signal_to_tracking(symbol: str, strike: int, option_type: str, entry_price: float):
+    """Add new signal to tracking"""
+    signal_id = _generate_signal_id(symbol, strike, option_type)
+    _active_signals[signal_id] = {
+        'timestamp': datetime.now(),
+        'entry_price': entry_price,
+        'symbol': symbol,
+        'strike': strike,
+        'type': option_type
+    }
+
 
 @router.get("/recommended-strikes")
 async def get_recommended_strikes(
@@ -77,6 +145,9 @@ async def get_recommended_strikes(
         
         if not market_state or symbol not in market_state:
             raise HTTPException(status_code=404, detail=f"Market data not available for {symbol}")
+        
+        # Clean up stale signals before generating new ones
+        _cleanup_stale_signals(market_state)
         
         # 4. Strategy engine disabled - using SAC Meta-Controller only
         # model_manager = ModelManager()
@@ -412,6 +483,41 @@ async def get_recommended_strikes(
         # Sort by composite score descending
         filtered_strikes.sort(key=lambda x: x['composite_score'], reverse=True)
         
+        # Add signal tracking for each recommended strike
+        for strike_data in filtered_strikes:
+            signal_id = _generate_signal_id(
+                symbol, 
+                int(strike_data['strike']), 
+                strike_data['direction']
+            )
+            
+            # Add to tracking if not already tracked
+            if signal_id not in _active_signals:
+                _add_signal_to_tracking(
+                    symbol,
+                    int(strike_data['strike']),
+                    strike_data['direction'],
+                    strike_data['entry_price']
+                )
+            
+            # Add signal metadata
+            signal = _active_signals.get(signal_id, {})
+            strike_data['signal_age_seconds'] = int((datetime.now() - signal.get('timestamp', datetime.now())).total_seconds())
+            strike_data['signal_age_minutes'] = round(strike_data['signal_age_seconds'] / 60, 1)
+            strike_data['entry_price_deviation_pct'] = 0.0
+            
+            # Calculate current price deviation if current price is available
+            current_price = strike_data.get('current_ltp', 0)
+            if current_price > 0 and strike_data['entry_price'] > 0:
+                deviation_pct = abs(current_price - strike_data['entry_price']) / strike_data['entry_price'] * 100
+                strike_data['entry_price_deviation_pct'] = round(deviation_pct, 2)
+                strike_data['is_stale_by_price'] = deviation_pct > ENTRY_PRICE_DEVIATION_PCT
+            else:
+                strike_data['is_stale_by_price'] = False
+            
+            strike_data['is_stale_by_time'] = strike_data['signal_age_minutes'] > ENTRY_WINDOW_MINUTES
+            strike_data['is_stale'] = strike_data['is_stale_by_time'] or strike_data['is_stale_by_price']
+        
         # 10. Build response (market context already calculated above)
         response = {
             "status": "success",
@@ -463,19 +569,106 @@ async def get_recommended_strikes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/top-picks")
-async def get_top_picks(
-    symbols: str = Query("NIFTY,SENSEX", description="Comma-separated symbols"),
-    limit: int = Query(5, description="Top N picks per symbol"),
-):
+@router.get("/signal-stats")
+async def get_signal_stats():
     """
-    Get top picks across multiple symbols
-    
-    Returns best 5 strikes per symbol based on highest composite scores
+    Get statistics about active signals and stale signal management
     """
-    
     try:
-        symbol_list = [s.strip().upper() for s in symbols.split(',')]
+        from backend.main import trading_system
+        
+        # Get current market data for cleanup
+        market_state = {}
+        if trading_system and hasattr(trading_system, 'market_data') and trading_system.market_data:
+            market_state = await trading_system.market_data.get_current_state()
+        
+        # Clean up stale signals
+        _cleanup_stale_signals(market_state)
+        
+        # Calculate statistics
+        now = datetime.now()
+        total_signals = len(_active_signals)
+        fresh_signals = 0
+        aging_signals = 0
+        stale_signals = 0
+        
+        for signal_id, signal in _active_signals.items():
+            age_minutes = (now - signal['timestamp']).total_seconds() / 60
+            
+            if age_minutes <= 2:
+                fresh_signals += 1
+            elif age_minutes <= ENTRY_WINDOW_MINUTES:
+                aging_signals += 1
+            else:
+                stale_signals += 1
+        
+        return {
+            "status": "success",
+            "timestamp": now_ist().isoformat(),
+            "signal_statistics": {
+                "total_active_signals": total_signals,
+                "fresh_signals": fresh_signals,
+                "aging_signals": aging_signals,
+                "stale_signals": stale_signals,
+                "entry_window_minutes": ENTRY_WINDOW_MINUTES,
+                "price_deviation_threshold_pct": ENTRY_PRICE_DEVIATION_PCT
+            },
+            "active_signals": [
+                {
+                    "signal_id": signal_id,
+                    "symbol": signal['symbol'],
+                    "strike": signal['strike'],
+                    "type": signal['type'],
+                    "entry_price": signal['entry_price'],
+                    "age_minutes": round((now - signal['timestamp']).total_seconds() / 60, 1),
+                    "timestamp": signal['timestamp'].isoformat()
+                }
+                for signal_id, signal in _active_signals.items()
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting signal stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cleanup-stale-signals")
+async def manual_cleanup_stale_signals():
+    """
+    Manually trigger cleanup of stale signals
+    """
+    try:
+        from backend.main import trading_system
+        
+        # Get current market data
+        market_state = {}
+        if trading_system and hasattr(trading_system, 'market_data') and trading_system.market_data:
+            market_state = await trading_system.market_data.get_current_state()
+        
+        # Count signals before cleanup
+        before_count = len(_active_signals)
+        
+        # Perform cleanup
+        _cleanup_stale_signals(market_state)
+        
+        # Count signals after cleanup
+        after_count = len(_active_signals)
+        removed_count = before_count - after_count
+        
+        return {
+            "status": "success",
+            "timestamp": now_ist().isoformat(),
+            "cleanup_results": {
+                "signals_before": before_count,
+                "signals_after": after_count,
+                "signals_removed": removed_count
+            },
+            "message": f"Cleaned up {removed_count} stale signals"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in manual cleanup: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
         all_picks = {}
         
         for symbol in symbol_list:

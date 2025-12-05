@@ -17,6 +17,11 @@ from backend.core.logger import logger
 from backend.core.logger import get_execution_logger
 from backend.monitoring.prometheus_exporter import MetricsExporter
 from backend.services.position_persistence import get_position_service
+from backend.notifications.telegram_notifier import get_telegram_notifier
+
+# P&L CALCULATION: LONG OPTIONS ONLY (Nov 21 locked)
+# SAME FORMULA FOR CALL AND PUT: (exit - entry) * quantity
+from backend.core.pnl_calculator import calculate_pnl
 
 logger = get_execution_logger()
 
@@ -37,6 +42,7 @@ class OrderManager:
         
         # Market context enrichment service
         self.market_context = MarketContextService(market_monitor, market_data)
+        self.telegram_notifier = get_telegram_notifier()
         
         mode = "PAPER" if self.is_paper_mode else "LIVE"
         logger.info(f"Order Manager initialized in {mode} mode")
@@ -459,6 +465,21 @@ class OrderManager:
             f"(SL: ₹{signal.get('stop_loss', 0):.2f}, Target: ₹{signal.get('target_price', 0):.2f})"
         )
         
+        # Send Telegram notification for trade entry
+        try:
+            trade_data = {
+                'symbol': symbol,
+                'instrument_type': signal.get('instrument_type', 'OPTION'),
+                'strike_price': strike,
+                'entry_price': order.get('fill_price', 0),
+                'quantity': position['quantity'],
+                'strategy_name': signal.get('strategy', 'UNKNOWN'),
+                'direction': direction
+            }
+            asyncio.create_task(self.telegram_notifier.send_trade_entry(trade_data))
+        except Exception as e:
+            logger.error(f"Failed to send Telegram trade entry notification: {e}")
+        
         return position
     
     async def place_order(self, order_details: Dict) -> Optional[Dict]:
@@ -498,7 +519,7 @@ class OrderManager:
                 success = await self._execute_live_order(order)
             
             if success:
-                # Create minimal position record for tracking
+                # Create position record with full option contract details
                 position = {
                     'id': order['id'],
                     'symbol': order_details.get('symbol'),
@@ -507,7 +528,12 @@ class OrderManager:
                     'entry_price': order.get('fill_price'),
                     'strategy_name': order_details.get('strategy_name', 'delta_hedge'),
                     'entry_time': to_naive_ist(now_ist()),
-                    'status': 'open'
+                    'status': 'open',
+                    # Add option contract details for proper exit (use expected field names)
+                    'strike_price': order_details.get('strike', 0),
+                    'instrument_type': order_details.get('option_type', order_details.get('instrument_type', 'CE')),
+                    'expiry': order_details.get('expiry', None),
+                    'option_symbol': order_details.get('option_symbol', f"{order_details.get('symbol', '')}FUT")
                 }
                 
                 # Add to positions for tracking
@@ -621,15 +647,16 @@ class OrderManager:
             old_price = position.get('current_price', 0)
             position['current_price'] = ltp
             
-            # Calculate P&L
+            # Calculate P&L for options trading (LONG OPTIONS ONLY - Nov 21 locked)
+            # SAME FORMULA FOR CALL AND PUT: (exit - entry) * quantity
             entry_price = position.get('entry_price', 0)
+            current_price = position.get('current_price', 0)
             quantity = position.get('quantity', 0)
-            direction = position.get('direction', 'BUY')
+            instrument_type = position.get('instrument_type', 'CALL')  # CALL or PUT
             
-            if direction == 'BUY':
-                pnl = (ltp - entry_price) * quantity
-            else:  # SELL
-                pnl = (entry_price - ltp) * quantity
+            # OFFICIAL P&L CALCULATION: LONG OPTIONS ONLY
+            # SAME FOR CALL AND PUT: (exit - entry) * quantity
+            pnl = calculate_pnl(entry_price, current_price, quantity, instrument_type)
             
             position['unrealized_pnl'] = pnl
             position['unrealized_pnl_pct'] = (pnl / (entry_price * quantity) * 100) if entry_price > 0 else 0
@@ -897,12 +924,17 @@ class OrderManager:
     
     async def _close_paper_position(self, position: Dict):
         """Close position in paper mode - capture complete exit data for ML"""
-        # Calculate P&L
+        # P&L CALCULATION: LONG OPTIONS ONLY (Nov 21 locked)
+        # SAME FORMULA FOR CALL AND PUT: (exit - entry) * quantity
         entry_price = position.get('entry_price', 0)
         current_price = position.get('current_price', 0)
         quantity = position.get('quantity', 0)
+        instrument_type = position.get('instrument_type', 'CALL')  # CALL or PUT
         
-        pnl = (current_price - entry_price) * quantity
+        # OFFICIAL P&L CALCULATION: LONG OPTIONS ONLY
+        # SAME FOR CALL AND PUT: (exit - entry) * quantity
+        pnl = calculate_pnl(entry_price, current_price, quantity, instrument_type)
+        
         position['pnl'] = pnl
         position['exit_price'] = current_price
         position['exit_time'] = to_naive_ist(now_ist())
@@ -996,6 +1028,24 @@ class OrderManager:
             logger.error(f"⚠️ WARNING: Exit Greeks NOT captured for {symbol} {strike} {option_type} - ML training data will be incomplete!")
         
         logger.info(f"[PAPER] Position closed - P&L: ₹{pnl:,.2f}")
+        
+        # Send Telegram notification for trade exit
+        try:
+            trade_data = {
+                'symbol': position.get('symbol', 'UNKNOWN'),
+                'instrument_type': position.get('instrument_type', 'OPTION'),
+                'strike_price': position.get('strike_price', 0),
+                'entry_price': position.get('entry_price', 0),
+                'exit_price': position.get('exit_price', 0),
+                'quantity': position.get('quantity', 0),
+                'net_pnl': pnl,
+                'pnl_percentage': (pnl / (position.get('entry_price', 1) * position.get('quantity', 1))) * 100 if position.get('entry_price') and position.get('quantity') else 0,
+                'exit_type': position.get('exit_reason', 'UNKNOWN'),
+                'strategy_name': position.get('strategy_name', 'UNKNOWN')
+            }
+            asyncio.create_task(self.telegram_notifier.send_trade_exit(trade_data))
+        except Exception as e:
+            logger.error(f"Failed to send Telegram trade exit notification: {e}")
     
     async def _close_live_position(self, position: Dict):
         """Close position in live mode"""
@@ -1022,12 +1072,17 @@ class OrderManager:
         )
         
         if response and response.get('status') == 'success':
-            # Get fill price and calculate P&L
+            # P&L CALCULATION: LONG OPTIONS ONLY (Nov 21 locked)
+            # SAME FORMULA FOR CALL AND PUT: (exit - entry) * quantity
             current_price = position.get('current_price', 0)
             entry_price = position.get('entry_price', 0)
             quantity = position.get('quantity', 0)
+            instrument_type = position.get('instrument_type', 'CALL')  # CALL or PUT
             
-            pnl = (current_price - entry_price) * quantity
+            # OFFICIAL P&L CALCULATION: LONG OPTIONS ONLY
+            # SAME FOR CALL AND PUT: (exit - entry) * quantity
+            pnl = calculate_pnl(entry_price, current_price, quantity, instrument_type)
+            
             position['pnl'] = pnl
             position['exit_price'] = current_price
             position['exit_time'] = datetime.now()

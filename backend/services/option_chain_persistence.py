@@ -1,12 +1,16 @@
 """
 Option Chain Persistence Service
 Stores historical option chain snapshots with Greeks for ML training
+STORAGE: All timestamps stored in UTC (raw)
 """
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+
+# Import timezone utilities for consistent time handling
+from backend.core.timezone_utils import now_utc, to_ist, to_utc
 
 from backend.core.logger import get_logger
 from backend.database.database import get_db
@@ -33,7 +37,7 @@ class OptionChainPersistenceService:
         Returns:
             True if should save new snapshot
         """
-        now = datetime.now()
+        now = now_utc()  # Use UTC for consistent comparison
         last_save = self._last_save_time.get(symbol)
         
         if not last_save:
@@ -65,7 +69,8 @@ class OptionChainPersistenceService:
                 should_close = True
             
             try:
-                timestamp = datetime.now()
+                from backend.core.timezone_utils import now_ist
+                timestamp = now_utc()  # Store in UTC
                 saved_count = 0
                 
                 # Save call options
@@ -121,7 +126,7 @@ class OptionChainPersistenceService:
                     saved_count += 1
                 
                 db.commit()
-                self._last_save_time[symbol] = timestamp
+                self._last_save_time[symbol] = timestamp  # Store in UTC
                 self.logger.info(f"✓ Saved {saved_count} option chain entries for {symbol}")
                 return True
                 
@@ -158,7 +163,8 @@ class OptionChainPersistenceService:
                 should_close = True
             
             try:
-                cutoff_time = datetime.now() - timedelta(hours=hours_back)
+                from backend.core.timezone_utils import now_ist
+                cutoff_time = now_utc() - timedelta(hours=hours_back)
                 
                 snapshots = db.query(OptionSnapshot).filter(
                     and_(
@@ -278,7 +284,8 @@ class OptionChainPersistenceService:
                 should_close = True
             
             try:
-                cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+                from backend.core.timezone_utils import now_ist
+                cutoff_date = now_utc() - timedelta(days=days_to_keep)
                 
                 deleted = db.query(OptionSnapshot).filter(
                     OptionSnapshot.timestamp < cutoff_date

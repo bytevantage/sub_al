@@ -126,7 +126,7 @@ async def get_active_locks():
                 "production_mode": os.getenv("ENVIRONMENT", "development").lower() == "production",
                 "locks": {
                     "max_concurrent_strategies": 3,
-                    "max_daily_loss_percent": -3.5,
+                    "max_daily_loss_percent": -5.0,
                     "max_position_size_per_strike": 4,
                     "force_eod_exit_time": "15:25",
                     "market_open_time": "09:15",

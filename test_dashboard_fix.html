@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Fix Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .expected { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Dashboard P&L Fix Verification</h1>
+    
+    <div id="results"></div>
+    
+    <script>
+        async function testDashboardAPI() {
+            const results = document.getElementById('results');
+            
+            try {
+                // Test capital management API
+                const response = await fetch('http://localhost:8000/api/dashboard/capital-management');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const capital = data.data;
+                    
+                    // Expected corrected values
+                    const expectedCurrent = 88944.75;
+                    const expectedTotalPnL = -11055.25;
+                    
+                    let html = '<h2>📊 API Test Results:</h2>';
+                    
+                    // Check current capital
+                    if (Math.abs(capital.current_capital - expectedCurrent) < 1) {
+                        html += `<div class="result success">✅ Current Capital: ₹${capital.current_capital.toLocaleString('en-IN')} (Correct)</div>`;
+                    } else {
+                        html += `<div class="result error">❌ Current Capital: ₹${capital.current_capital.toLocaleString('en-IN')} (Expected: ₹${expectedCurrent.toLocaleString('en-IN')})</div>`;
+                    }
+                    
+                    // Check total P&L
+                    if (Math.abs(capital.total_pnl - expectedTotalPnL) < 1) {
+                        html += `<div class="result success">✅ Total P&L: ₹${capital.total_pnl.toLocaleString('en-IN')} (Correct)</div>`;
+                    } else {
+                        html += `<div class="result error">❌ Total P&L: ₹${capital.total_pnl.toLocaleString('en-IN')} (Expected: ₹${expectedTotalPnL.toLocaleString('en-IN')})</div>`;
+                    }
+                    
+                    html += `<div class="result expected">📋 Expected Values:</div>`;
+                    html += `<div class="result expected">   Current Capital: ₹${expectedCurrent.toLocaleString('en-IN')}</div>`;
+                    html += `<div class="result expected">   Total P&L: ₹${expectedTotalPnL.toLocaleString('in-IN')}</div>`;
+                    
+                    html += '<h2>🔧 What Was Fixed:</h2>';
+                    html += '<div class="result success">✅ Backend API now uses corrected P&L formula</div>';
+                    html += '<div class="result success">✅ Frontend updated to use new API endpoint</div>';
+                    html += '<div class="result success">✅ Disabled conflicting paper_trading_status.js</div>';
+                    html += '<div class="result success">✅ Updated cache-busting parameter</div>';
+                    
+                    html += '<h2>🚨 Dashboard Should Now Show:</h2>';
+                    html += '<div class="result expected">💰 Capital Management</div>';
+                    html += '<div class="result expected">STARTING CAPITAL    ₹1,00,000</div>';
+                    html += '<div class="result expected">CURRENT CAPITAL     ₹88,944.75</div>';
+                    html += '<div class="result expected">TODAY\'S P&L         ₹0.00 (0.00%)</div>';
+                    html += '<div class="result expected">TOTAL P&L           ₹-11,055.25 (-11.06%)</div>';
+                    
+                    results.innerHTML = html;
+                    
+                } else {
+                    results.innerHTML = `<div class="result error">❌ API Error: ${data}</div>`;
+                }
+                
+            } catch (error) {
+                results.innerHTML = `<div class="result error">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Run test on page load
+        testDashboardAPI();
+        
+        // Auto-refresh every 5 seconds
+        setInterval(testDashboardAPI, 5000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Dashboard Cache</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .button { padding: 10px 20px; margin: 10px; border: none; border-radius: 5px; cursor: pointer; }
+        .clear { background: #dc3545; color: white; }
+        .test { background: #007bff; color: white; }
+        .result { margin: 20px 0; padding: 15px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>🧹 Clear Dashboard Cache & Test</h1>
+    
+    <div>
+        <button class="button clear" onclick="clearAllCache()">Clear All Cache</button>
+        <button class="button test" onclick="testDashboard()">Test Dashboard API</button>
+        <button class="button test" onclick="openDashboard()">Open Dashboard</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        function clearAllCache() {
+            const results = document.getElementById('results');
+            let html = '<h2>🧹 Cache Cleared:</h2>';
+            
+            // Clear localStorage
+            const localStorageKeys = Object.keys(localStorage);
+            localStorageKeys.forEach(key => {
+                localStorage.removeItem(key);
+                html += `<div>✅ Cleared localStorage: ${key}</div>`;
+            });
+            
+            // Clear sessionStorage
+            const sessionStorageKeys = Object.keys(sessionStorage);
+            sessionStorageKeys.forEach(key => {
+                sessionStorage.removeItem(key);
+                html += `<div>✅ Cleared sessionStorage: ${key}</div>`;
+            });
+            
+            // Clear service worker cache if available
+            if ('caches' in window) {
+                caches.keys().then(cacheNames => {
+                    cacheNames.forEach(cacheName => {
+                        caches.delete(cacheName);
+                        html += `<div>✅ Cleared cache: ${cacheName}</div>`;
+                    });
+                    results.innerHTML = html;
+                });
+            } else {
+                results.innerHTML = html + '<div>ℹ️ No cache API available</div>';
+            }
+            
+            // Force reload
+            setTimeout(() => {
+                location.reload(true);
+            }, 2000);
+        }
+        
+        async function testDashboard() {
+            const results = document.getElementById('results');
+            
+            try {
+                // Test corrected API
+                const response = await fetch('http://localhost:8000/api/dashboard/capital-management');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const capital = data.data;
+                    const expectedCurrent = 88944.75;
+                    const expectedPnL = -11055.25;
+                    
+                    let html = '<h2>📊 API Test Results:</h2>';
+                    
+                    if (Math.abs(capital.current_capital - expectedCurrent) < 1) {
+                        html += '<div class="result success">✅ Current Capital is CORRECT</div>';
+                    } else {
+                        html += '<div class="result error">❌ Current Capital is WRONG</div>';
+                    }
+                    
+                    if (Math.abs(capital.total_pnl - expectedPnL) < 1) {
+                        html += '<div class="result success">✅ Total P&L is CORRECT</div>';
+                    } else {
+                        html += '<div class="result error">❌ Total P&L is WRONG</div>';
+                    }
+                    
+                    html += `<h3>API Response:</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    results.innerHTML = html;
+                } else {
+                    results.innerHTML = `<div class="result error">❌ API Error: ${JSON.stringify(data)}</div>`;
+                }
+                
+            } catch (error) {
+                results.innerHTML = `<div class="result error">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+        
+        function openDashboard() {
+            // Open dashboard with cache-busting parameter
+            const timestamp = new Date().getTime();
+            window.open(`/frontend/dashboard/index.html?t=${timestamp}`, '_blank');
+        }
+        
+        // Auto-test on load
+        testDashboard();
+    </script>
+</body>
+</html>

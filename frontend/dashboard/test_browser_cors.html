@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Browser CORS Test</title>
+</head>
+<body>
+    <h1>Browser CORS Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        const endpoints = [
+            '/api/dashboard/system-status',
+            '/paper_trading_status.json',
+            '/api/dashboard/positions',
+            '/api/capital',
+            '/api/dashboard/risk-metrics',
+            '/api/market/overview',
+            '/api/watchlist/signal-stats',
+            '/api/health/summary'
+        ];
+        
+        async function testEndpoint(endpoint) {
+            const url = `http://localhost:8000${endpoint}?t=${Date.now()}`;
+            try {
+                const response = await fetch(url);
+                const result = await response.json();
+                return { endpoint, status: response.status, success: true, result };
+            } catch (error) {
+                return { endpoint, status: 'ERROR', success: false, error: error.message };
+            }
+        }
+        
+        async function runTests() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>Testing...</h2>';
+            
+            const results = await Promise.all(endpoints.map(testEndpoint));
+            
+            let html = '<h2>Results:</h2>';
+            results.forEach(({ endpoint, status, success, result, error }) => {
+                html += `<div style="margin: 10px; padding: 10px; border: 1px solid #ccc; ${success ? 'background: #d4edda' : 'background: #f8d7da'}">`;
+                html += `<strong>${endpoint}</strong><br>`;
+                html += `Status: ${status}<br>`;
+                if (success) {
+                    html += `✅ Success<br>`;
+                    html += `<small>${JSON.stringify(result).substring(0, 100)}...</small>`;
+                } else {
+                    html += `❌ Error: ${error}`;
+                }
+                html += `</div>`;
+            });
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        // Run tests immediately
+        runTests();
+    </script>
+</body>
+</html>

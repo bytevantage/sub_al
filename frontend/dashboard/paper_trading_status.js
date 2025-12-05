@@ -6,7 +6,7 @@
 // Poll for paper trading status every 5 seconds
 async function loadPaperTradingStatus() {
     try {
-        const response = await fetch('paper_trading_status.json?' + new Date().getTime());
+        const response = await fetch('/paper_trading_status.json');
         const status = await response.json();
         
         // Update capital display

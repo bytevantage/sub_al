@@ -8,6 +8,7 @@ import pytz
 from datetime import datetime, date
 import asyncio
 import logging
+from sqlalchemy import func
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -169,31 +170,41 @@ async def get_risk_metrics_snapshot() -> Dict[str, Any]:
         try:
             from backend.database import db as database
             from backend.database import Trade
+            from backend.core.pnl_calculator import calculate_pnl
             from sqlalchemy import case
             import asyncio
             session = database.get_session()
             
             # Add timeout to database query
             async def get_trade_stats():
-                return (
+                trades = (
                     session.query(Trade)
-                    .filter(Trade.trade_date >= today_ist().date())
-                    .with_entities(
-                        database.func.sum(Trade.net_pnl).label("realized_pnl"),
-                        database.func.count(Trade.id).label("total_trades"),
-                        database.func.sum(case((Trade.net_pnl > 0, 1), (Trade.net_pnl <= 0, 0))).label("winning_trades"),
-                        database.func.sum(case((Trade.net_pnl < 0, 1), (Trade.net_pnl >= 0, 0))).label("losing_trades"),
-                    )
+                    .filter(Trade.entry_time >= today_ist())
                     .all()
                 )
+                return trades
             
             # Run with timeout
-            result = await asyncio.wait_for(get_trade_stats(), timeout=5.0)
-            if result and result[0]:
-                today_realized_pnl = float(result[0].realized_pnl or 0.0)
-                total_trades_today = int(result[0].total_trades or 0)
-                winning_trades = int(result[0].winning_trades or 0)
-                losing_trades = int(result[0].losing_trades or 0)
+            trades = await asyncio.wait_for(get_trade_stats(), timeout=5.0)
+            
+            if trades:
+                # Recalculate P&L using correct formula
+                correct_realized_pnl = 0.0
+                total_trades_today = len(trades)
+                winning_trades = 0
+                losing_trades = 0
+                
+                for trade in trades:
+                    if trade.entry_price and trade.exit_price:
+                        correct_pnl = calculate_pnl(trade.entry_price, trade.exit_price, trade.quantity, trade.instrument_type)
+                        correct_realized_pnl += correct_pnl
+                        
+                        if correct_pnl > 0:
+                            winning_trades += 1
+                        elif correct_pnl < 0:
+                            losing_trades += 1
+                
+                today_realized_pnl = correct_realized_pnl
                 
         except asyncio.TimeoutError:
             logger.warning("Database query timeout in risk metrics - using fallback values")
@@ -383,6 +394,79 @@ async def get_risk_metrics_snapshot() -> Dict[str, Any]:
             }
         }
 
+@router.get("/capital-management")
+async def get_capital_management() -> Dict[str, Any]:
+    """Get capital management summary with corrected P&L calculations."""
+    try:
+        from backend.database import db as database
+        from backend.database import Trade
+        from backend.core.pnl_calculator import calculate_pnl
+        import asyncio
+        session = database.get_session()
+        
+        # Get all trades to calculate total P&L
+        async def get_all_trades():
+            return session.query(Trade).all()
+        
+        all_trades = await asyncio.wait_for(get_all_trades(), timeout=5.0)
+        
+        # Calculate corrected P&L for all trades
+        total_correct_pnl = 0.0
+        today_correct_pnl = 0.0
+        
+        today_ist_date = today_ist()
+        start_of_today_naive = start_of_day_ist().replace(tzinfo=None)
+        
+        for trade in all_trades:
+            if trade.entry_price and trade.exit_price:
+                correct_pnl = calculate_pnl(trade.entry_price, trade.exit_price, trade.quantity, trade.instrument_type)
+                total_correct_pnl += correct_pnl
+                
+                # Check if trade is from today
+                if trade.entry_time >= start_of_today_naive:
+                    today_correct_pnl += correct_pnl
+        
+        initial_capital = 100000.0
+        current_capital = initial_capital + total_correct_pnl
+        today_pnl_percent = (today_correct_pnl / initial_capital * 100) if initial_capital > 0 else 0.0
+        total_pnl_percent = (total_correct_pnl / initial_capital * 100) if initial_capital > 0 else 0.0
+        
+        return {
+            "status": "success",
+            "data": {
+                "timestamp": ist_isoformat(),
+                "initial_capital": _round(initial_capital),
+                "current_capital": _round(current_capital),
+                "today_pnl": _round(today_correct_pnl),
+                "today_pnl_percent": _round(today_pnl_percent),
+                "total_pnl": _round(total_correct_pnl),
+                "total_pnl_percent": _round(total_pnl_percent),
+                "total_trades": len(all_trades),
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting capital management: {e}")
+        return {
+            "status": "success",
+            "data": {
+                "timestamp": ist_isoformat(),
+                "initial_capital": 100000.0,
+                "current_capital": 100000.0,
+                "today_pnl": 0.0,
+                "today_pnl_percent": 0.0,
+                "total_pnl": 0.0,
+                "total_pnl_percent": 0.0,
+                "total_trades": 0,
+                "message": f"Error calculating capital: {str(e)[:100]}"
+            }
+        }
+    finally:
+        try:
+            session.close()
+        except:
+            pass
+
 @router.get("/trades/recent")
 async def get_recent_trades(
     limit: int = Query(25, ge=1, le=200),
@@ -392,6 +476,7 @@ async def get_recent_trades(
     try:
         from backend.database import db as database
         from backend.database import Trade
+        from backend.core.pnl_calculator import calculate_pnl
         session = database.get_session()
         if not session:
             raise HTTPException(status_code=503, detail="Database not available")
@@ -410,6 +495,16 @@ async def get_recent_trades(
         trade_rows: List[Dict[str, Any]] = []
         for trade in trades:
             trade_dict = trade.to_dict()
+            
+            # Calculate correct P&L using the corrected formula
+            correct_pnl = 0.0
+            correct_pnl_pct = 0.0
+            
+            if trade.entry_price and trade.exit_price:
+                correct_pnl = calculate_pnl(trade.entry_price, trade.exit_price, trade.quantity, trade.instrument_type)
+                if trade.entry_price > 0:
+                    correct_pnl_pct = (correct_pnl / (trade.entry_price * trade.quantity)) * 100
+            
             trade_rows.append(
                 {
                     "trade_id": trade_dict.get("trade_id"),
@@ -422,8 +517,10 @@ async def get_recent_trades(
                     "entry_price": trade_dict.get("entry_price"),
                     "exit_price": trade_dict.get("exit_price"),
                     "quantity": trade_dict.get("quantity"),
-                    "net_pnl": trade_dict.get("net_pnl"),
-                    "pnl_percentage": trade_dict.get("pnl_percentage"),
+                    "net_pnl": correct_pnl,  # Use corrected P&L
+                    "old_net_pnl": trade_dict.get("net_pnl"),  # Keep old for reference
+                    "pnl_percentage": correct_pnl_pct,  # Use corrected percentage
+                    "old pnl_percentage": trade_dict.get("pnl_percentage"),  # Keep old for reference
                     "strategy_name": trade_dict.get("strategy_name"),
                     "status": trade_dict.get("status"),
                     "hold_duration_minutes": trade_dict.get("hold_duration_minutes"),

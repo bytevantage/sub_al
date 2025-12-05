@@ -8,12 +8,31 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
-import json
-from pathlib import Path
+from datetime import datetime
+from backend.core.logger import get_logger
 
-from backend.core.logger import logger
+logger = get_logger(__name__)
 
+class UpstoxRateLimiter:
+    """Simple rate limiter for Upstox API calls"""
+    
+    def __init__(self, max_requests_per_second: int = 3):
+        self.max_requests_per_second = max_requests_per_second
+        self.requests = []
+        
+    def wait_if_needed(self):
+        """Wait if we've exceeded the rate limit"""
+        now = time.time()
+        # Remove requests older than 1 second
+        self.requests = [req_time for req_time in self.requests if now - req_time < 1.0]
+        
+        # If we're at the limit, wait
+        if len(self.requests) >= self.max_requests_per_second:
+            sleep_time = 1.0 - (now - self.requests[0])
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+        
+        self.requests.append(now)
 
 class UpstoxClient:
     """Upstox API Client with rate limiting"""
@@ -25,7 +44,9 @@ class UpstoxClient:
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json"
         }
-        self.rate_limiter = RateLimiter(max_calls=10, time_window=1)
+        
+        # Initialize rate limiter (3 requests per second for safety)
+        self.rate_limiter = UpstoxRateLimiter(max_requests_per_second=3)
         
         # Create session with connection pooling and DNS caching
         self.session = requests.Session()
@@ -57,6 +78,9 @@ class UpstoxClient:
     def _make_request(self, method: str, endpoint: str, params: dict = None, data: dict = None, retry_count: int = 0, max_retries: int = 3):
         """Make HTTP request to Upstox API with rate limiting"""
         url = f"{self.base_url}{endpoint}"
+        
+        # Apply rate limiting before making request
+        self.rate_limiter.wait_if_needed()
         
         try:
             if method.upper() == "GET":
@@ -266,7 +290,32 @@ class UpstoxClient:
             "instrument_key": instrument_key,
             "expiry_date": expiry_date
         }
-        return self._make_request("GET", endpoint, params=params)
+        # Use longer timeout for option chain (15 seconds) as it's data-heavy
+        try:
+            self.rate_limiter.wait_if_needed()
+            url = f"{self.base_url}{endpoint}"
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                logger.warning(f"Rate limit for option chain, waiting 5s...")
+                time.sleep(5)
+                return self.get_option_chain(instrument_key, expiry_date)
+            else:
+                logger.error(f"Option chain API failed: {response.status_code} - {response.text}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.error(f"Option chain timeout for {instrument_key}, retrying with shorter data...")
+            # Retry with a smaller expiry date as fallback
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error for option chain: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Option chain error: {e}")
+            return None
     
     def get_option_contracts(
         self,

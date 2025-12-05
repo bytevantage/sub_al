@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>CORS Test - Final</title>
+</head>
+<body>
+    <h1>Final CORS Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        const tests = [
+            { url: 'http://localhost:8000/api/dashboard/positions?t=' + Date.now(), name: 'Positions' },
+            { url: 'http://localhost:8000/api/capital?t=' + Date.now(), name: 'Capital' },
+            { url: 'http://localhost:8000/api/dashboard/risk-metrics?t=' + Date.now(), name: 'Risk Metrics' },
+            { url: 'http://localhost:8000/api/market/overview?t=' + Date.now(), name: 'Market Overview' }
+        ];
+        
+        async function runTests() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>Testing...</h2>';
+            
+            for (const test of tests) {
+                try {
+                    const response = await fetch(test.url);
+                    const data = await response.json();
+                    results.innerHTML += `
+                        <div style="margin: 10px; padding: 10px; border: 1px solid #ccc; background: #d4edda;">
+                            <strong>${test.name}</strong>: ✅ ${response.status}<br>
+                            <small>${JSON.stringify(data).substring(0, 100)}...</small>
+                        </div>
+                    `;
+                } catch (error) {
+                    results.innerHTML += `
+                        <div style="margin: 10px; padding: 10px; border: 1px solid #ccc; background: #f8d7da;">
+                            <strong>${test.name}</strong>: ❌ ${error.message}
+                        </div>
+                    `;
+                }
+            }
+            
+            results.innerHTML += '<h3>✅ Tests Complete! If all show green, CORS is working.</h3>';
+        }
+        
+        runTests();
+    </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Clear Cache & Reload Dashboard</title>
+    <script>
+        // Force clear all caches and redirect
+        if ('caches' in window) {
+            caches.keys().then(function(names) {
+                names.forEach(function(name) {
+                    caches.delete(name);
+                });
+            });
+        }
+        
+        // Clear localStorage
+        localStorage.clear();
+        
+        // Clear sessionStorage
+        sessionStorage.clear();
+        
+        // Redirect to dashboard with timestamp
+        window.location.href = 'index.html?v=' + Date.now();
+    </script>
+</head>
+<body>
+    <h1>Clearing cache and redirecting to dashboard...</h1>
+    <p>If not redirected automatically, <a href="index.html?v=20251128">click here</a></p>
+</body>
+</html>

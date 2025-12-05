@@ -1860,10 +1860,12 @@ body {
     border-radius: 3px;
     background: #334155;
     outline: none;
+    appearance: none;
     -webkit-appearance: none;
 }
 
 .strategy-weight-item input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
     -webkit-appearance: none;
     width: 18px;
     height: 18px;
@@ -2174,5 +2176,99 @@ input:checked + .toggle-slider:before {
 
 #watchlist-body {
     overflow: hidden;
+}
+
+/* Signal Status and Age Styles */
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+    display: inline-block;
+    min-width: 60px;
+}
+
+.status-fresh {
+    background: var(--success);
+    color: white;
+}
+
+.status-aging {
+    background: var(--warning);
+    color: white;
+}
+
+.status-stale {
+    background: var(--danger);
+    color: white;
+}
+
+.age-cell {
+    text-align: center;
+    font-weight: 600;
+}
+
+.age-fresh {
+    color: var(--success);
+}
+
+.age-aging {
+    color: var(--warning);
+}
+
+.age-stale {
+    color: var(--danger);
+}
+
+.price-deviation {
+    color: var(--warning);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.stale-signal {
+    opacity: 0.6;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.stale-signal:hover {
+    opacity: 0.8;
+}
+
+/* Enhanced Watchlist Table Headers */
+.watchlist-table th:nth-child(10),
+.watchlist-table th:nth-child(11) {
+    min-width: 60px;
+}
+
+.watchlist-table .status-cell {
+    text-align: center;
+}
+
+/* Add tooltip for stale signals */
+.stale-signal .price-cell {
+    position: relative;
+}
+
+.stale-signal .price-cell::after {
+    content: "Entry price moved significantly";
+    position: absolute;
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--danger);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+.stale-signal:hover .price-cell::after {
+    opacity: 1;
 }
 

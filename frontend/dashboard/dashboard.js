@@ -616,12 +616,18 @@ function updateStatusBadge(isMarketOpen) {
 async function updatePositions() {
     try {
         // Add cache-busting to ensure real-time prices
-        const response = await fetch(`${API_BASE_URL}/api/dashboard/positions`);
+        const response = await fetch(`${API_BASE_URL}/api/dashboard/positions?t=${Date.now()}`);
         const data = await response.json();
+        
+        console.log('Positions API response:', data); // Debug log
         
         if (data.status === 'success') {
             const positions = (data.data && data.data.positions) || [];
+            console.log('Positions found:', positions.length); // Debug log
             displayPositions(positions);
+        } else {
+            console.error('Positions API error:', data);
+            showError('positions-table', 'API error: ' + (data.message || 'Unknown error'));
         }
         
     } catch (error) {
@@ -633,6 +639,8 @@ async function updatePositions() {
 // Display positions table
 function displayPositions(positions) {
     const container = document.getElementById('positions-table');
+    
+    console.log('Displaying positions:', positions); // Debug log
     
     if (positions.length === 0) {
         container.innerHTML = '<div class="no-data">No open positions</div>';
@@ -751,17 +759,45 @@ function displayRiskMetrics(metrics) {
     document.getElementById('win-rate').textContent = `${(metrics.win_rate || 0).toFixed(1)}%`;
     document.getElementById('drawdown').textContent = `${(metrics.max_drawdown || 0).toFixed(2)}%`;
     
+    // Update IV Rank
+    const ivRankEl = document.getElementById('iv-rank');
+    if (ivRankEl) {
+        ivRankEl.textContent = `${(metrics.iv_rank || 0).toFixed(1)}%`;
+    }
+    
+    // Update VWAP deviation
+    const vwapEl = document.getElementById('session-vwap');
+    if (vwapEl) {
+        const deviation = metrics.vwap_deviation || 0;
+        const sign = deviation >= 0 ? '+' : '';
+        vwapEl.textContent = `${sign}${deviation.toFixed(2)}%`;
+    }
+    
+    // Update SAC status
+    const sacEl = document.getElementById('sac-mode');
+    if (sacEl) {
+        sacEl.textContent = `SAC: ${metrics.sac_status || 'EXPLORING'}`;
+    }
+    
+    // Update Net Delta
+    const deltaEl = document.getElementById('net-delta');
+    if (deltaEl) {
+        const delta = metrics.net_delta || 0;
+        deltaEl.textContent = delta === 0 ? '--' : delta.toFixed(2);
+    }
+    
+    // Update Total Gamma
+    const gammaEl = document.getElementById('total-gamma');
+    if (gammaEl) {
+        const gamma = metrics.total_gamma || 0;
+        gammaEl.textContent = gamma === 0 ? '--' : gamma.toFixed(2);
+    }
+    
     // Update capital utilization if available
-    const capitalUtilEl = document.getElementById('session-vwap');
+    const capitalUtilEl = document.getElementById('capital-utilization');
     if (capitalUtilEl) {
         const util = metrics.capital_utilization || 0;
         capitalUtilEl.textContent = `${util.toFixed(1)}% utilized`;
-    }
-    
-    // Update total trades
-    const tradesEl = document.getElementById('iv-rank');
-    if (tradesEl) {
-        tradesEl.textContent = `${metrics.total_trades || 0} trades`;
     }
     
     // Color code the metrics
@@ -1259,29 +1295,6 @@ function formatPercent(value) {
 // TRADE HISTORY
 // ============================================================================
 
-async function updateTradeHistory() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/trades/history?limit=10`);
-        const data = await response.json();
-        
-        if (data.trades && data.trades.length > 0) {
-            displayTradeHistory(data.trades);
-        } else {
-            const container = document.getElementById('recent-trades');
-            if (container) {
-                container.innerHTML = '<div class="no-data">No recent trades</div>';
-            }
-        }
-        
-    } catch (error) {
-        console.error('Error fetching trade history:', error);
-        const container = document.getElementById('recent-trades');
-        if (container) {
-            container.innerHTML = '<div class="error">Error loading trade history</div>';
-        }
-    }
-}
-
 function displayTradeHistory(trades) {
     const container = document.getElementById('recent-trades');
     if (!container) return;
@@ -1319,11 +1332,12 @@ function displayTradeHistory(trades) {
 
 async function updateCapitalInfo() {
     try {
-        const response = await fetch(`${API_BASE}/paper_trading_status.json`);
+        // Use the new capital management API endpoint
+        const response = await fetch(`${API_BASE_URL}/api/dashboard/capital-management`);
         const data = await response.json();
         
-        if (data) {
-            displayCapitalInfo(data);
+        if (data.status === 'success' && data.data) {
+            displayCapitalInfo(data.data);
         }
         
     } catch (error) {
@@ -1341,17 +1355,18 @@ function displayCapitalInfo(capital) {
     const totalPnlPctEl = document.getElementById('total-pnl-pct');
     
     if (startingCapitalEl) {
-        startingCapitalEl.textContent = `₹${(capital.initial_capital || capital.capital || 100000).toLocaleString('en-IN')}`;
+        startingCapitalEl.textContent = `₹${(capital.initial_capital || 100000).toLocaleString('en-IN')}`;
     }
     
     if (currentCapitalEl) {
-        currentCapitalEl.textContent = `₹${(capital.capital || capital.current_capital || 100000).toLocaleString('en-IN')}`;
+        currentCapitalEl.textContent = `₹${(capital.current_capital || 100000).toLocaleString('en-IN')}`;
     }
     
-    // Calculate today's P&L (assuming total_pnl includes today's P&L for now)
-    const todaysPnl = capital.total_pnl || capital.last_pnl || 0;
-    const startingCapital = capital.initial_capital || capital.capital || 100000;
-    const todaysPnlPct = startingCapital > 0 ? (todaysPnl / startingCapital) * 100 : 0;
+    // Use corrected P&L values from the new API
+    const todaysPnl = capital.today_pnl || 0;
+    const todaysPnlPct = capital.today_pnl_percent || 0;
+    const totalPnl = capital.total_pnl || 0;
+    const totalPnlPct = capital.total_pnl_percent || 0;
     
     if (todayPnlEl) {
         todayPnlEl.textContent = `${todaysPnl >= 0 ? '+' : ''}₹${Math.abs(todaysPnl).toLocaleString('en-IN')}`;
@@ -1363,15 +1378,15 @@ function displayCapitalInfo(capital) {
         todayPnlPctEl.className = todaysPnl >= 0 ? 'pnl-percentage positive' : 'pnl-percentage negative';
     }
     
-    // For total P&L, use same as today's for now (can be enhanced later)
+    // Update total P&L with corrected values
     if (totalPnlEl) {
-        totalPnlEl.textContent = `${todaysPnl >= 0 ? '+' : ''}₹${Math.abs(todaysPnl).toLocaleString('en-IN')}`;
-        totalPnlEl.className = todaysPnl >= 0 ? 'capital-value pnl-value positive' : 'capital-value pnl-value negative';
+        totalPnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}₹${Math.abs(totalPnl).toLocaleString('en-IN')}`;
+        totalPnlEl.className = totalPnl >= 0 ? 'capital-value pnl-value positive' : 'capital-value pnl-value negative';
     }
     
     if (totalPnlPctEl) {
-        totalPnlPctEl.textContent = `(${todaysPnl >= 0 ? '+' : ''}${todaysPnlPct.toFixed(2)}%)`;
-        totalPnlPctEl.className = todaysPnl >= 0 ? 'pnl-percentage positive' : 'pnl-percentage negative';
+        totalPnlPctEl.textContent = `(${totalPnl >= 0 ? '+' : ''}${totalPnlPct.toFixed(2)}%)`;
+        totalPnlPctEl.className = totalPnl >= 0 ? 'pnl-percentage positive' : 'pnl-percentage negative';
     }
 }
 

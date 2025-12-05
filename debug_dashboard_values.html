@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .old { background: #fff3cd; }
+        .corrected { background: #d4edda; }
+        .error { background: #f8d7da; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Dashboard Values Debug</h1>
+    
+    <div class="section corrected">
+        <h2>✅ Corrected API Values</h2>
+        <div id="corrected-api">Loading...</div>
+    </div>
+    
+    <div class="section old">
+        <h2>⚠️ Old API Values</h2>
+        <div id="old-api">Loading...</div>
+    </div>
+    
+    <div class="section">
+        <h2>📊 What Dashboard Should Show</h2>
+        <div id="expected-values">
+            <pre>
+CURRENT CAPITAL: ₹88,944.75
+TOTAL P&L: ₹-11,055.25
+TODAY'S P&L: ₹0.00
+
+NOT:
+CURRENT CAPITAL: ₹1,05,050.94  ← WRONG
+TOTAL P&L: ₹+5,050.94        ← WRONG
+            </pre>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>🔧 Browser Cache Test</h2>
+        <p>Current time: <span id="current-time"></span></p>
+        <p>Cache-busting version: <span id="version"></span></p>
+        <button onclick="location.reload()">Force Refresh</button>
+    </div>
+    
+    <script>
+        // Update current time
+        document.getElementById('current-time').textContent = new Date().toLocaleTimeString();
+        document.getElementById('version').textContent = new Date().toISOString().replace(/[:.]/g, '').slice(0, -5);
+        
+        async function testAPIs() {
+            try {
+                // Test corrected API
+                const correctedResponse = await fetch('http://localhost:8000/api/dashboard/capital-management');
+                const correctedData = await correctedResponse.json();
+                
+                document.getElementById('corrected-api').innerHTML = `
+                    <pre>${JSON.stringify(correctedData, null, 2)}</pre>
+                    <p><strong>Status:</strong> ${correctedData.status === 'success' ? '✅ Working' : '❌ Error'}</p>
+                `;
+                
+                // Test old API
+                const oldResponse = await fetch('http://localhost:8000/paper_trading_status.json');
+                const oldData = await oldResponse.json();
+                
+                document.getElementById('old-api').innerHTML = `
+                    <pre>${JSON.stringify(oldData, null, 2)}</pre>
+                    <p><strong>Status:</strong> ⚠️ Still active (may override corrected values)</p>
+                `;
+                
+            } catch (error) {
+                document.getElementById('corrected-api').innerHTML = `<p>❌ Error: ${error.message}</p>`;
+                document.getElementById('old-api').innerHTML = `<p>❌ Error: ${error.message}</p>`;
+            }
+        }
+        
+        // Test APIs immediately
+        testAPIs();
+        
+        // Refresh every 5 seconds
+        setInterval(testAPIs, 5000);
+        
+        // Update time every second
+        setInterval(() => {
+            document.getElementById('current-time').textContent = new Date().toLocaleTimeString();
+        }, 1000);
+    </script>
+</body>
+</html>

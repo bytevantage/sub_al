@@ -7,6 +7,9 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 
+# Import timezone utilities for consistent time handling
+from backend.core.timezone_utils import now_utc, to_ist
+
 from backend.core.logger import get_logger
 from backend.database.database import get_db
 from backend.database.models import Position
@@ -81,7 +84,7 @@ class PositionPersistenceService:
                         # Skip 'id' field as it's the primary key and should not be updated
                         if key != 'id' and hasattr(existing, key):
                             setattr(existing, key, value)
-                    existing.last_updated = datetime.now()
+                    existing.last_updated = now_utc()
                     self.logger.info(f"✓ Updated position: {position_data.get('position_id')}")
                 else:
                     # Create new position
@@ -104,7 +107,7 @@ class PositionPersistenceService:
                         strategy_name=position_data.get('strategy_name'),
                         signal_strength=position_data.get('signal_strength'),
                         ml_score=position_data.get('ml_score'),
-                        entry_time=position_data.get('entry_time') or datetime.now(),
+                        entry_time=position_data.get('entry_time') or now_utc(),
                         order_id=position_data.get('order_id'),
                         instrument_token=position_data.get('instrument_token'),
                         delta_entry=position_data.get('delta_entry'),
@@ -194,7 +197,7 @@ class PositionPersistenceService:
                 
                 if position:
                     position.current_price = current_price
-                    position.last_updated = datetime.now()
+                    position.last_updated = now_utc()
                     
                     # Calculate unrealized P&L if not provided
                     if unrealized_pnl is not None:
@@ -257,7 +260,7 @@ class PositionPersistenceService:
                         position.trailing_sl = trailing_sl
                     if position_metadata is not None:
                         position.position_metadata = position_metadata
-                    position.last_updated = datetime.now()
+                    position.last_updated = now_utc()
                     
                     db.commit()
                     return True

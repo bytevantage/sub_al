@@ -18,8 +18,8 @@ class SACIVRankStrategy(BaseStrategy):
     
     def __init__(self, weight: int = 75):
         super().__init__("SAC_IV_Rank", weight)
-        self.high_iv_threshold = 20  # Above 20% is high
-        self.low_iv_threshold = 12   # Below 12% is low
+        self.high_iv_threshold = 75  # Above 75% is high (spec)
+        self.low_iv_threshold = 25   # Below 25% is low (spec)
         
     async def analyze(self, market_state: Dict) -> List[Signal]:
         """Generate IV rank based signals"""
@@ -72,11 +72,16 @@ class SACIVRankStrategy(BaseStrategy):
                         signals.append(signal)
                         logger.info(f"IV Rank signal: Sell {symbol} {atm_strike} PUT @ ₹{ltp}, IV={iv:.1f}%")
                     
-                    # Low IV: Buy cheap options
+                    # Low IV: Buy cheap options only if ADX > 35 (strong trend)
                     elif iv < self.low_iv_threshold and ltp > 0:
-                        signal = Signal(
-                            strategy_name=self.name,
-                            symbol=symbol,
+                        # Check ADX for strong trend requirement
+                        technical_indicators = symbol_data.get('technical_indicators', {})
+                        adx = technical_indicators.get('adx', 0)
+                        
+                        if adx > 35:  # Spec requirement: ADX > 35 for low IV buying
+                            signal = Signal(
+                                strategy_name=self.name,
+                                symbol=symbol,
                             direction='PUT',
                             action='BUY',
                             strike=atm_strike,
@@ -91,7 +96,9 @@ class SACIVRankStrategy(BaseStrategy):
                         signal.stop_loss = ltp * 0.85     # 15% SL
                         
                         signals.append(signal)
-                        logger.info(f"IV Rank signal: Buy {symbol} {atm_strike} PUT @ ₹{ltp}, IV={iv:.1f}%")
+                        logger.info(f"IV Rank signal: Buy {symbol} {atm_strike} PUT @ ₹{ltp}, IV={iv:.1f}%, ADX={adx}")
+                    else:
+                        logger.info(f"IV Rank: Low IV ({iv:.1f}%) but ADX too low ({adx}) - skipping")
                         
         except Exception as e:
             logger.error(f"Error in SAC IV Rank: {e}")

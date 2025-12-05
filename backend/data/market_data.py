@@ -428,8 +428,8 @@ class MarketDataManager:
         
         # Symbol-specific expiry tracking (NIFTY and SENSEX only)
         self.expiry_config = {
-            'NIFTY': ('weekly', 1),      # Weekly, Tuesday
-            'SENSEX': ('weekly', 3),      # Weekly, Thursday
+            'NIFTY': ('weekly', 1),      # Weekly, Tuesday ✅
+            'SENSEX': ('weekly', 3),      # Weekly, Thursday ✅
         }
         # Remove hardcoded current_expiry - calculate per symbol dynamically
 
@@ -560,9 +560,9 @@ class MarketDataManager:
             Expiry date in YYYY-MM-DD format
             
         Expiry Schedule:
-        - NIFTY: Every Tuesday (weekly)
+        - NIFTY: Every Tuesday (weekly) ✅
         - BANKNIFTY: Last Thursday of month (monthly)
-        - SENSEX: Every Thursday (weekly)
+        - SENSEX: Every Thursday (weekly) ✅
         """
         today = datetime.now()
         expiry_type, target_weekday = self.expiry_config.get(symbol, ('weekly', 3))
@@ -635,18 +635,49 @@ class MarketDataManager:
             # Get data for Nifty
             nifty_data = await self.get_instrument_data("NIFTY")
             if nifty_data:
+                # Ensure PCR is present and derive from option_chain if missing
+                if 'pcr' not in nifty_data or nifty_data.get('pcr') in (None, 0):
+                    oc = nifty_data.get('option_chain') or {}
+                    total_call = oc.get('total_call_oi') or oc.get('total_call_oi', 0)
+                    total_put = oc.get('total_put_oi') or oc.get('total_put_oi', 0)
+                    try:
+                        nifty_data['pcr'] = (total_put / total_call) if total_call and total_call > 0 else oc.get('pcr', 1.0)
+                    except Exception:
+                        nifty_data['pcr'] = oc.get('pcr', 1.0)
+
                 state["NIFTY"] = nifty_data
                 # market_state already updated in get_instrument_data()
             
             # Get data for Sensex
             sensex_data = await self.get_instrument_data("SENSEX")
             if sensex_data:
+                # If SENSEX lacks PCR, prefer NIFTY's PCR (production rule)
+                if 'pcr' not in sensex_data or sensex_data.get('pcr') in (None, 0):
+                    nifty_pcr = state.get('NIFTY', {}).get('pcr')
+                    if nifty_pcr:
+                        sensex_data['pcr'] = nifty_pcr
+                    else:
+                        oc = sensex_data.get('option_chain') or {}
+                        total_call = oc.get('total_call_oi') or 0
+                        total_put = oc.get('total_put_oi') or 0
+                        try:
+                            sensex_data['pcr'] = (total_put / total_call) if total_call and total_call > 0 else oc.get('pcr', 1.0)
+                        except Exception:
+                            sensex_data['pcr'] = oc.get('pcr', 1.0)
+
                 state["SENSEX"] = sensex_data
                 # market_state already updated in get_instrument_data()
             
             # Add freshness indicator
             state["last_update"] = datetime.now()
             state["is_stale"] = False
+            # Log final published PCRs for observability
+            try:
+                logger.info(
+                    f"PUBLISHED MARKET STATE: NIFTY_pcr={state.get('NIFTY',{}).get('pcr')} | SENSEX_pcr={state.get('SENSEX',{}).get('pcr')}"
+                )
+            except Exception:
+                pass
             
             return state
             
@@ -826,13 +857,18 @@ class MarketDataManager:
                 "timestamp": datetime.now().isoformat()
             }
             
+            # Add timestamp to option chain for freshness validation
+            if option_chain:
+                option_chain['timestamp'] = datetime.now().isoformat()
+                option_chain['fetch_time'] = datetime.now()
+            
             # Populate market_state for downstream strategies and Greeks calculation
             self.market_state[symbol] = {
                 'spot_price': spot_price,
                 'atm_strike': atm_strike,
                 'expiry': symbol_expiry,
                 'option_chain': option_chain,
-                'pcr': option_chain.get('pcr', 0) if option_chain else 0,
+                'pcr': option_chain.get('pcr', 1.0) if option_chain else 1.0,  # Fixed: use 1.0 as neutral default
                 'max_pain': option_chain.get('max_pain', 0) if option_chain else 0,
                 'historical_data': historical_data,  # Add historical data for ML Strategy
                 'total_call_oi': option_chain.get('total_call_oi', 0) if option_chain else 0,
@@ -840,11 +876,11 @@ class MarketDataManager:
                 'total_oi': option_chain.get('total_oi', 0) if option_chain else 0,
                 'multi_timeframe': multi_timeframe,
                 'technical_indicators': technical_indicators,
-                'iv_rank': multi_timeframe.get('1hour', {}).get('indicators', {}).get('iv_rank', 50) if multi_timeframe else 50,
+                'iv_rank': technical_indicators.get('iv_rank', 50),  # Use real IV Rank from technical_indicators
                 'timestamp': datetime.now()
             }
             
-            return data
+            return self.market_state[symbol]
             
         except Exception as e:
             logger.error(f"Error getting instrument data for {symbol}: {e}")
@@ -938,7 +974,7 @@ class MarketDataManager:
                 logger.debug(f"✓ Redis cache hit: option chain for {symbol} {expiry}")
                 return cached_chain
         
-        # Check in-memory cache - 10s cache for rate limiting safety
+        # Check in-memory cache - 5s cache for rate limiting safety
         if cache_key in self.option_chain_cache:
             cached = self.option_chain_cache[cache_key]
             # Defensive check for cache structure
@@ -947,9 +983,16 @@ class MarketDataManager:
                 del self.option_chain_cache[cache_key]
             else:
                 age = (datetime.now() - cached['timestamp']).total_seconds()
-                if age < 10:  # 10 second cache - BALANCED for rate limiting
+                if age < 10:  # 10 second cache - SAFE for rate limiting (3 req/s limit)
                     logger.debug(f"Using cached option chain for {symbol} (age: {age:.1f}s)")
+                    # Add timestamp to cached data
+                    if cached['data'] and isinstance(cached['data'], dict):
+                        cached['data']['timestamp'] = cached['timestamp'].isoformat()
+                        cached['data']['fetch_time'] = cached['timestamp']
                     return cached['data']
+                else:
+                    logger.debug(f"Cache expired for {symbol} (age: {age:.1f}s), fetching fresh data")
+                    # Don't return cached data, continue to fetch fresh data
         
         # Throttle repeated failures to avoid hammering API
         failure_key = (symbol, expiry)
@@ -1031,6 +1074,11 @@ class MarketDataManager:
                             spot_price
                         )
                     )
+                
+                # Add timestamp to chain_data for freshness validation
+                if chain_data and isinstance(chain_data, dict):
+                    chain_data['timestamp'] = datetime.now().isoformat()
+                    chain_data['fetch_time'] = datetime.now()
                 
                 # Cache it in both Redis and memory
                 self.option_chain_cache[cache_key] = {
@@ -1167,6 +1215,9 @@ class MarketDataManager:
             filtered['pcr'] = total_put_oi / total_call_oi
         else:
             filtered['pcr'] = option_chain.get('pcr', 0)
+        
+        # Add PCR logging for debugging
+        logger.info(f"🔍 PCR Calculation for {symbol}: Call OI={total_call_oi:,}, Put OI={total_put_oi:,}, PCR={filtered['pcr']:.3f}")
         
         # Add total OI to filtered data
         filtered['total_call_oi'] = total_call_oi

@@ -18,7 +18,7 @@ class SACVWAPDeviationStrategy(BaseStrategy):
     
     def __init__(self, weight: int = 70):
         super().__init__("SAC_VWAP_Deviation", weight)
-        self.deviation_threshold = 0.005  # 0.5% deviation
+        self.deviation_threshold = 0.0035  # 0.35% deviation (spec)
         
     async def analyze(self, market_state: Dict) -> List[Signal]:
         """Generate VWAP deviation signals"""

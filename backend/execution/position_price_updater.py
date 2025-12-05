@@ -23,8 +23,9 @@ class PositionPriceUpdater:
         self.order_manager = order_manager
         self.market_data_manager = market_data_manager
         
-        # Update interval (fast enough for trading, safe for rate limiting)
-        self.update_interval_seconds = 5  # Update every 5 seconds
+        # Use OFFICIAL data fetch frequency from config
+        from backend.main import config
+        self.update_interval_seconds = config.get('data_fetch.position_ltp_seconds', 5)  # Official: 5 seconds
         
         # Tracking
         self.last_update_time = None
@@ -33,7 +34,7 @@ class PositionPriceUpdater:
         
     async def start_price_updates(self):
         """Start continuous position price updates"""
-        logger.info("🔄 Starting Real-time Position Price Updater (5s interval)")
+        logger.info(f"🔄 Starting Real-time Position Price Updater ({self.update_interval_seconds}s interval)")
         
         while True:
             try:
