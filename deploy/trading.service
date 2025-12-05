@@ -5,10 +5,11 @@ After=network.target
 [Service]
 Type=simple
 User=%i
-# Update the path below to the deploy user home and repo path
-WorkingDirectory=/home/youruser/public_html/srb-algo
-EnvironmentFile=/home/youruser/public_html/srb-algo/.env
-ExecStart=/home/youruser/public_html/srb-algo/venv/bin/python3 backend/main.py
+# Systemd unit prefilled for Hostinger deploy user `u570718221`.
+# Update if deploying under a different user.
+WorkingDirectory=/home/u570718221/domains/srbalgo.bytevantage.in/public_html/srb-algo
+EnvironmentFile=/home/u570718221/domains/srbalgo.bytevantage.in/public_html/srb-algo/.env
+ExecStart=/home/u570718221/domains/srbalgo.bytevantage.in/public_html/srb-algo/venv/bin/python3 backend/main.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=syslog
