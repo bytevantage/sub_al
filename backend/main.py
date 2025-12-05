@@ -1299,7 +1299,7 @@ class TradingSystem:
                 
                 # Get P&L data
                 positions = await self.order_manager.get_positions()
-                total_pnl = sum(pos.get('pnl', 0) for pos in positions)
+                total_pnl = sum(pos.get('unrealized_pnl', 0) for pos in positions)
                 
                 # Get capital info
                 current_capital = 100000 + total_pnl  # Starting from 100k
